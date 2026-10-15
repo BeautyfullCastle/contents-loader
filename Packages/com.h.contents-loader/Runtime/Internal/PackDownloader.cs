@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace H.ContentsLoader
 {
@@ -12,12 +11,14 @@ namespace H.ContentsLoader
     {
         readonly string cacheDirectory;
         readonly Func<string> remoteUrl;
+        readonly IPackTransfer transfer;
         readonly Dictionary<string, Task> running = new();
 
-        public PackDownloader(string cacheDirectory, Func<string> remoteUrl)
+        public PackDownloader(string cacheDirectory, Func<string> remoteUrl, IPackTransfer transfer)
         {
             this.cacheDirectory = cacheDirectory;
             this.remoteUrl = remoteUrl;
+            this.transfer = transfer;
         }
 
         public int DownloadCount { get; private set; }
@@ -27,6 +28,15 @@ namespace H.ContentsLoader
             var path = Path.Combine(cacheDirectory, fileName);
             return File.Exists(path) ? path : null;
         }
+
+        // 앱이 꺼져 중단된 다운로드도 남아 있으니 남은 크기만 셈
+        public long RemainingBytesOf(ContentCatalog.Pack pack)
+        {
+            var partial = new FileInfo(PartialPathOf(pack.FileName));
+            return partial.Exists ? Math.Max(0, pack.Size - partial.Length) : pack.Size;
+        }
+
+        string PartialPathOf(string fileName) => Path.Combine(cacheDirectory, fileName + ".download");
 
         public async Task Download(IReadOnlyList<ContentCatalog.Pack> packs, IProgress<float> progress)
         {
@@ -66,29 +76,10 @@ namespace H.ContentsLoader
             Directory.CreateDirectory(cacheDirectory);
             var url = $"{remoteUrl()}/{pack.FileName}";
             var target = Path.Combine(cacheDirectory, pack.FileName);
-            var downloaded = target + ".download";
+            var downloaded = PartialPathOf(pack.FileName);
             var recompressed = target + ".lz4";
 
-            var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbGET, new DownloadHandlerFile(downloaded), null);
-            try
-            {
-                var operation = request.SendWebRequest();
-                while (!operation.isDone)
-                {
-                    reportBytes((long)request.downloadedBytes);
-                    await Awaitable.NextFrameAsync();
-                }
-                if (request.result != UnityWebRequest.Result.Success)
-                    throw new ContentDownloadException(url, request.error);
-            }
-            catch
-            {
-                request.Dispose();
-                File.Delete(downloaded);
-                throw;
-            }
-            // 파일 핸들을 닫아야 재압축이 파일을 열 수 있음
-            request.Dispose();
+            await transfer.Fetch(url, downloaded, pack.Size, reportBytes);
             reportBytes(pack.Size);
 
             // 전송은 LZMA로 작게, 저장은 LZ4로 바꿈. LZMA 번들은 열 때마다 전체 압축을 풀어야 함

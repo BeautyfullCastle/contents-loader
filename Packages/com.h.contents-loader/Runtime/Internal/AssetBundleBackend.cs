@@ -71,7 +71,7 @@ namespace H.ContentsLoader
             builtInFiles = new HashSet<string>(catalogs.BuiltIn.Packs
                 .Where(p => p.Delivery == ContentDelivery.BuiltIn)
                 .Select(p => p.FileName));
-            downloader = new PackDownloader(Path.Combine(options.CacheRoot, "packs"), () => RemoteUrl);
+            downloader = new PackDownloader(Path.Combine(options.CacheRoot, "packs"), () => RemoteUrl, PackTransfer.CreateDefault());
         }
 
         public long MemoryBudget => catalogs.Current.MemoryBudget;
@@ -145,7 +145,7 @@ namespace H.ContentsLoader
             return downloader.Download(Missing(catalogs.PacksOfFolder(folder)), progress);
         }
 
-        public long GetDownloadSize(string folder) => Missing(catalogs.PacksOfFolder(folder)).Sum(p => p.Size);
+        public long GetDownloadSize(string folder) => Missing(catalogs.PacksOfFolder(folder)).Sum(downloader.RemainingBytesOf);
 
         public async Task<bool> UpdateCatalog()
         {

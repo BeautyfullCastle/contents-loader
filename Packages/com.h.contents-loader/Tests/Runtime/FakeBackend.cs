@@ -37,10 +37,9 @@ namespace H.ContentsLoader.Tests
         public TaskCompletionSource<bool> AsyncGate;
         public int Loads;
 
-        public bool SupportsPartialUnload => true;
         public long MemoryBudget { get; set; } = long.MaxValue;
 
-        public ContentStatus GetStatus(string path)
+        public ContentStatus GetStatus(string path, Type type)
         {
             if (Ready.Contains(path)) return ContentStatus.Ready;
             return Remote.Contains(path) ? ContentStatus.NeedsDownload : ContentStatus.NotFound;

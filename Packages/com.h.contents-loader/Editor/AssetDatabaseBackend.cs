@@ -17,41 +17,48 @@ namespace H.ContentsLoader.Editor
         }
 
         static bool mapDirty = true;
-        static readonly Dictionary<string, string> AssetPaths = new(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, List<string>> AssetPaths = new(StringComparer.OrdinalIgnoreCase);
 
         public AssetDatabaseBackend(long memoryBudget)
         {
             MemoryBudget = memoryBudget;
         }
 
-        public bool SupportsPartialUnload => true;
         public long MemoryBudget { get; }
 
         internal static void MarkDirty() => mapDirty = true;
 
-        static Dictionary<string, string> Map
+        static Dictionary<string, List<string>> Map
         {
             get
             {
                 if (!mapDirty) return AssetPaths;
                 AssetPaths.Clear();
                 foreach (var entry in ContentsScanner.ScanProject().Entries)
-                    AssetPaths[entry.Path] = entry.AssetPath;
+                {
+                    if (!AssetPaths.TryGetValue(entry.Path, out var list)) AssetPaths.Add(entry.Path, list = new List<string>());
+                    list.Add(entry.AssetPath);
+                }
                 mapDirty = false;
                 return AssetPaths;
             }
         }
 
-        public ContentStatus GetStatus(string path)
+        public ContentStatus GetStatus(string path, Type type)
         {
             return Map.ContainsKey(ContentPath.Normalize(path)) ? ContentStatus.Ready : ContentStatus.NotFound;
         }
 
         public IContentLease Load(string path, Type type)
         {
-            if (!Map.TryGetValue(ContentPath.Normalize(path), out var assetPath))
+            if (!Map.TryGetValue(ContentPath.Normalize(path), out var assetPaths))
                 throw new ArgumentException($"'{path}' 경로의 콘텐츠가 없습니다.");
-            return new Lease(AssetDatabase.LoadAssetAtPath(assetPath, type));
+            foreach (var assetPath in assetPaths)
+            {
+                var asset = AssetDatabase.LoadAssetAtPath(assetPath, type);
+                if (asset != null) return new Lease(asset);
+            }
+            return new Lease(null);
         }
 
         public Task<IContentLease> LoadAsync(string path, Type type) => Task.FromResult(Load(path, type));

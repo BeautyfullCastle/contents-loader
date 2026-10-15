@@ -71,9 +71,15 @@ namespace H.ContentsLoader.Editor
                 }
 
                 var entry = new ContentsEntry { Path = path, AssetPath = assetPath, RootFolder = root };
+                // 같은 Contents 폴더 안에서 확장자만 다르면 허용함. 로드할 때 타입으로 고름
                 if (byPath.TryGetValue(path, out var existing))
                 {
-                    result.Errors.Add($"Contents 경로 '{path}'가 겹칩니다: {existing.AssetPath}, {assetPath}");
+                    if (existing.RootFolder == root)
+                    {
+                        result.Entries.Add(entry);
+                        continue;
+                    }
+                    result.Errors.Add($"Contents 경로 '{existing.Path}'가 서로 다른 Contents 폴더에서 겹칩니다: {existing.AssetPath}, {assetPath}");
                     continue;
                 }
                 if (byHash.TryGetValue(ContentPath.Hash(path), out var collided))

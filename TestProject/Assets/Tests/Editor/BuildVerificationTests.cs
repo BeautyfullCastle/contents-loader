@@ -47,8 +47,13 @@ namespace H.ContentsLoader.Integration.Editor
             var catalog = ContentCatalog.FromBytes(File.ReadAllBytes($"{result.BuiltInDirectory}/{ContentCatalog.FileName}"));
 
             foreach (var path in new[] { "Towers/Cannon", "Towers/Archer", "UI/Shop", "Data/Config", "Bosses/Dragon", "Season01/Goblin" })
-                Assert.That(catalog.TryFindEntry(path, out _), path);
-            Assert.That(catalog.Entries, Has.Length.EqualTo(6));
+                Assert.That(catalog.TryFindEntry(path, null, out _), path);
+            Assert.That(catalog.Entries, Has.Length.EqualTo(7));
+            Assert.That(catalog.FindEntries("Towers/Cannon").Count(), Is.EqualTo(2));
+            Assert.That(catalog.TryFindEntry("Towers/Cannon", typeof(Texture2D), out var texture));
+            Assert.That(texture.AssetName, Is.EqualTo("Assets/Game/Contents/Towers/Cannon.png"));
+            Assert.That(catalog.TryFindEntry("Towers/Cannon", typeof(GameObject), out var prefab));
+            Assert.That(prefab.AssetName, Is.EqualTo("Assets/Game/Contents/Towers/Cannon.prefab"));
             Assert.That(catalog.RemoteUrl, Is.EqualTo($"https://cdn.invalid/contents/{FixtureBuild.Target}"));
         }
 

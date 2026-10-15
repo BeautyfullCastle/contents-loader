@@ -19,12 +19,10 @@ namespace H.ContentsLoader
 
     internal interface IContentBackend : IDisposable
     {
-        // false면 같은 저장 단위의 다른 애셋이 살아 있는 동안 메모리가 실제로 해제되지 않음
-        bool SupportsPartialUnload { get; }
-
         long MemoryBudget { get; }
 
-        ContentStatus GetStatus(string path);
+        // type이 null이면 경로에 걸린 애셋 전부를 봄
+        ContentStatus GetStatus(string path, Type type);
         IContentLease Load(string path, Type type);
         Task<IContentLease> LoadAsync(string path, Type type);
         Task Download(string folder, IProgress<float> progress);

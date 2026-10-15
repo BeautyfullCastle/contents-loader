@@ -45,7 +45,7 @@ namespace H.ContentsLoader
                 return record.Asset;
             }
 
-            switch (backend.GetStatus(path))
+            switch (backend.GetStatus(path, type))
             {
                 case ContentStatus.NotFound:
                     Debug.LogWarning($"[Contents Loader] '{path}' 경로의 콘텐츠가 없습니다.");
@@ -81,7 +81,7 @@ namespace H.ContentsLoader
                 return record.Lease != null ? Task.FromResult(record.Asset) : record.Loading;
             }
 
-            if (backend.GetStatus(path) == ContentStatus.NotFound)
+            if (backend.GetStatus(path, type) == ContentStatus.NotFound)
             {
                 Debug.LogWarning($"[Contents Loader] '{path}' 경로의 콘텐츠가 없습니다.");
                 return Task.FromResult<Object>(null);

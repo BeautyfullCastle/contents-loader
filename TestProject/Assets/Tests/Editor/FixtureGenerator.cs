@@ -49,6 +49,8 @@ namespace H.ContentsLoader.Integration.Editor
             Texture("Archer", 16, 3);
             Texture("Goblin", 16, 4);
             Texture("Dragon", 512, 5);
+            // 프리팹과 같은 경로의 텍스처. 타입으로 고르는지 확인함
+            Texture("Cannon", 16, 6, $"{Game}/Towers");
             File.WriteAllText($"{Game}/Data/Config.txt", "difficulty=normal");
             AssetDatabase.Refresh();
 
@@ -91,7 +93,7 @@ namespace H.ContentsLoader.Integration.Editor
             }
         }
 
-        static void Texture(string name, int size, int seed)
+        static void Texture(string name, int size, int seed, string folder = Art)
         {
             var random = new System.Random(seed);
             var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
@@ -99,7 +101,7 @@ namespace H.ContentsLoader.Integration.Editor
             for (var i = 0; i < pixels.Length; i++)
                 pixels[i] = new Color32((byte)random.Next(256), (byte)random.Next(256), (byte)random.Next(256), 255);
             texture.SetPixels32(pixels);
-            File.WriteAllBytes($"{Art}/{name}.png", texture.EncodeToPNG());
+            File.WriteAllBytes($"{folder}/{name}.png", texture.EncodeToPNG());
             Object.DestroyImmediate(texture);
         }
 

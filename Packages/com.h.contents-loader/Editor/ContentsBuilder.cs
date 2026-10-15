@@ -177,13 +177,20 @@ namespace H.ContentsLoader.Editor
                 }).ToArray(),
             };
 
+            var typeNames = new List<string>();
+            var sharedPaths = entries.GroupBy(e => e.Path, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             catalog.Entries = entries.Select(e => new ContentCatalog.Entry
             {
                 PathHash = ContentPath.Hash(e.Path),
                 Pack = indexOf[result.Clusters.PackOf[guidOf[e]].Id],
                 AssetName = e.AssetPath,
                 Delivery = settings.ResolveDelivery(e),
+                Types = sharedPaths.Contains(e.Path) ? TypesIn(e.AssetPath, typeNames) : null,
             }).ToArray();
+            catalog.TypeNames = typeNames.ToArray();
 
             var groups = new Dictionary<string, SortedSet<int>>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in catalog.Entries.Zip(entries, (c, e) => (c, e)))
@@ -203,6 +210,27 @@ namespace H.ContentsLoader.Editor
 
             catalog.Sort();
             return catalog;
+        }
+
+        // 기반 타입까지 넣어 두면 런타임은 요청 타입 이름만 찾으면 됨
+        static int[] TypesIn(string assetPath, List<string> typeNames)
+        {
+            var indices = new SortedSet<int>();
+            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(assetPath))
+            {
+                if (asset == null) continue;
+                for (var type = asset.GetType(); type != null && type != typeof(object); type = type.BaseType)
+                {
+                    var index = typeNames.IndexOf(type.FullName);
+                    if (index < 0)
+                    {
+                        index = typeNames.Count;
+                        typeNames.Add(type.FullName);
+                    }
+                    indices.Add(index);
+                }
+            }
+            return indices.ToArray();
         }
 
         static void VerifyDeliveryBoundary(ContentsBuildResult result, BuiltBundles bundles)

@@ -33,18 +33,34 @@ namespace H.ContentsLoader
         }
 
         // 첫 원소가 애셋이 들어 있는 팩임
-        public bool TryResolve(string path, out ContentCatalog.Entry entry, out ContentCatalog.Pack[] packs)
+        public bool TryResolve(string path, Type type, out ContentCatalog.Entry entry, out ContentCatalog.Pack[] packs)
         {
             foreach (var layer in Layers)
             {
-                if (!layer.TryFindEntry(path, out entry)) continue;
-                var main = layer.Packs[entry.Pack];
-                packs = main.Dependencies.Select(i => layer.Packs[i]).Prepend(main).ToArray();
+                if (!layer.TryFindEntry(path, type, out entry)) continue;
+                packs = PacksOf(layer, entry);
                 return true;
             }
             entry = default;
             packs = null;
             return false;
+        }
+
+        // 경로에 걸린 애셋 전부의 팩. 경로가 없으면 빈 목록임
+        public IEnumerable<ContentCatalog.Pack> PacksOfPath(string path)
+        {
+            foreach (var layer in Layers)
+            {
+                var entries = layer.FindEntries(path).ToList();
+                if (entries.Count > 0) return entries.SelectMany(e => PacksOf(layer, e));
+            }
+            return Enumerable.Empty<ContentCatalog.Pack>();
+        }
+
+        static ContentCatalog.Pack[] PacksOf(ContentCatalog layer, ContentCatalog.Entry entry)
+        {
+            var main = layer.Packs[entry.Pack];
+            return main.Dependencies.Select(i => layer.Packs[i]).Prepend(main).ToArray();
         }
 
         public IEnumerable<ContentCatalog.Pack> PacksOfFolder(string folder)

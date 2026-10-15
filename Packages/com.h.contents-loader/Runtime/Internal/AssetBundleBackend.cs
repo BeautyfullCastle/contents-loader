@@ -74,7 +74,6 @@ namespace H.ContentsLoader
             downloader = new PackDownloader(Path.Combine(options.CacheRoot, "packs"), () => RemoteUrl);
         }
 
-        public bool SupportsPartialUnload => false;
         public long MemoryBudget => catalogs.Current.MemoryBudget;
         public int DownloadCount => downloader.DownloadCount;
 
@@ -89,15 +88,18 @@ namespace H.ContentsLoader
             }
         }
 
-        public ContentStatus GetStatus(string path)
+        public ContentStatus GetStatus(string path, Type type)
         {
-            if (!catalogs.TryResolve(path, out _, out var packs)) return ContentStatus.NotFound;
+            var packs = type == null
+                ? catalogs.PacksOfPath(path).ToList()
+                : catalogs.TryResolve(path, type, out _, out var resolved) ? resolved.ToList() : new List<ContentCatalog.Pack>();
+            if (packs.Count == 0) return ContentStatus.NotFound;
             return packs.All(p => LocalPathOf(p) != null) ? ContentStatus.Ready : ContentStatus.NeedsDownload;
         }
 
         public IContentLease Load(string path, Type type)
         {
-            var packs = Resolve(path, out var entry);
+            var packs = Resolve(path, type, out var entry);
             var acquired = new List<string>();
             try
             {
@@ -118,7 +120,7 @@ namespace H.ContentsLoader
 
         public async Task<IContentLease> LoadAsync(string path, Type type)
         {
-            var packs = Resolve(path, out var entry);
+            var packs = Resolve(path, type, out var entry);
             await downloader.Download(Missing(packs), null);
 
             var acquiring = packs.Select(AcquireAsync).ToArray();
@@ -166,9 +168,9 @@ namespace H.ContentsLoader
             loaded.Clear();
         }
 
-        ContentCatalog.Pack[] Resolve(string path, out ContentCatalog.Entry entry)
+        ContentCatalog.Pack[] Resolve(string path, Type type, out ContentCatalog.Entry entry)
         {
-            if (catalogs.TryResolve(path, out entry, out var packs)) return packs;
+            if (catalogs.TryResolve(path, type, out entry, out var packs)) return packs;
             throw new ArgumentException($"'{path}' 경로의 콘텐츠가 없습니다.");
         }
 

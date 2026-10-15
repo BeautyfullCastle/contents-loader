@@ -25,20 +25,7 @@ namespace H.ContentsLoader.Editor.Tests
         }
 
         [Test]
-        public void SamePathInTwoContentsFoldersIsAnError()
-        {
-            var result = ContentsScanner.Scan(new[]
-            {
-                "Assets/A/Contents/Towers/Cannon.prefab",
-                "Assets/B/Contents/Towers/Cannon.prefab",
-            });
-
-            Assert.That(result.Errors, Has.Count.EqualTo(1));
-            StringAssert.Contains("Towers/Cannon", result.Errors[0]);
-        }
-
-        [Test]
-        public void PathsDifferingOnlyByCaseOrExtensionConflict()
+        public void SamePathInTwoContentsFoldersIsAnErrorEvenWithAnotherExtension()
         {
             var result = ContentsScanner.Scan(new[]
             {
@@ -47,6 +34,22 @@ namespace H.ContentsLoader.Editor.Tests
             });
 
             Assert.That(result.Errors, Has.Count.EqualTo(1));
+            StringAssert.Contains("Towers/Cannon", result.Errors[0]);
+        }
+
+        [Test]
+        public void SamePathWithAnotherExtensionInOneContentsFolderIsAllowed()
+        {
+            var result = ContentsScanner.Scan(new[]
+            {
+                "Assets/A/Contents/Towers/Cannon.prefab",
+                "Assets/A/Contents/Towers/Cannon.png",
+            });
+
+            Assert.That(result.Errors, Is.Empty);
+            Assert.That(result.Entries.Select(e => e.AssetPath),
+                Is.EqualTo(new[] { "Assets/A/Contents/Towers/Cannon.png", "Assets/A/Contents/Towers/Cannon.prefab" }));
+            Assert.That(result.Entries.Select(e => e.Path), Is.All.EqualTo("Towers/Cannon"));
         }
 
         [Test]

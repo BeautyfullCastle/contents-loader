@@ -46,13 +46,13 @@ namespace H.ContentsLoader
 
         public static bool Exists(string path)
         {
-            return ContentSystem.Lifetime.Backend.GetStatus(path) != ContentStatus.NotFound;
+            return ContentSystem.Lifetime.Backend.GetStatus(path, null) != ContentStatus.NotFound;
         }
 
-        /// <summary>Returns false when loading the path needs a download first.</summary>
+        /// <summary>Returns false when loading any asset at the path needs a download first.</summary>
         public static bool IsDownloaded(string path)
         {
-            return ContentSystem.Lifetime.Backend.GetStatus(path) == ContentStatus.Ready;
+            return ContentSystem.Lifetime.Backend.GetStatus(path, null) == ContentStatus.Ready;
         }
     }
 

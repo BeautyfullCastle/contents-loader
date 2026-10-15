@@ -8,7 +8,7 @@ namespace H.ContentsLoader
     internal sealed class ContentCatalog
     {
         public const string FileName = "catalog.bin";
-        const int FormatVersion = 1;
+        const int FormatVersion = 2;
         static readonly byte[] Magic = { (byte)'H', (byte)'C', (byte)'L', (byte)'C' };
 
         public struct Pack
@@ -26,6 +26,8 @@ namespace H.ContentsLoader
             public int Pack;
             public string AssetName;
             public ContentDelivery Delivery;
+            // 같은 경로에 애셋이 여럿일 때만 채움. TypeNames 인덱스이며 기반 타입까지 포함함
+            public int[] Types;
         }
 
         public struct Group
@@ -40,12 +42,38 @@ namespace H.ContentsLoader
         public Pack[] Packs = Array.Empty<Pack>();
         public Entry[] Entries = Array.Empty<Entry>();
         public Group[] Groups = Array.Empty<Group>();
+        public string[] TypeNames = Array.Empty<string>();
 
-        public bool TryFindEntry(string path, out Entry entry)
+        public IEnumerable<Entry> FindEntries(string path)
         {
-            var index = BinarySearch(Entries, ContentPath.Hash(path), e => e.PathHash);
-            entry = index >= 0 ? Entries[index] : default;
-            return index >= 0;
+            var hash = ContentPath.Hash(path);
+            var index = BinarySearch(Entries, hash, e => e.PathHash);
+            if (index < 0) yield break;
+            while (index > 0 && Entries[index - 1].PathHash == hash) index--;
+            for (; index < Entries.Length && Entries[index].PathHash == hash; index++)
+                yield return Entries[index];
+        }
+
+        // Resources.Load와 같게 요청 타입을 가진 애셋을 고름. 맞는 게 없으면 첫 애셋을 줌
+        public bool TryFindEntry(string path, Type type, out Entry entry)
+        {
+            var typeIndex = type == null ? -1 : Array.IndexOf(TypeNames, type.FullName);
+            var found = false;
+            entry = default;
+            foreach (var candidate in FindEntries(path))
+            {
+                if (!found)
+                {
+                    entry = candidate;
+                    found = true;
+                }
+                if (typeIndex >= 0 && candidate.Types != null && Array.IndexOf(candidate.Types, typeIndex) >= 0)
+                {
+                    entry = candidate;
+                    return true;
+                }
+            }
+            return found;
         }
 
         public bool TryFindGroup(string folder, out Group group)
@@ -57,7 +85,9 @@ namespace H.ContentsLoader
 
         public void Sort()
         {
-            Array.Sort(Entries, (a, b) => a.PathHash.CompareTo(b.PathHash));
+            Array.Sort(Entries, (a, b) => a.PathHash != b.PathHash
+                ? a.PathHash.CompareTo(b.PathHash)
+                : string.CompareOrdinal(a.AssetName, b.AssetName));
             Array.Sort(Groups, (a, b) => a.FolderHash.CompareTo(b.FolderHash));
         }
 
@@ -86,6 +116,9 @@ namespace H.ContentsLoader
                 w.Write(RemoteUrl ?? "");
                 w.Write(MemoryBudget);
 
+                w.Write(TypeNames.Length);
+                foreach (var name in TypeNames) w.Write(name);
+
                 w.Write(Packs.Length);
                 foreach (var p in Packs)
                 {
@@ -102,6 +135,7 @@ namespace H.ContentsLoader
                     w.Write(e.Pack);
                     w.Write(e.AssetName);
                     w.Write((byte)e.Delivery);
+                    WriteInts(w, e.Types);
                 }
 
                 w.Write(Groups.Length);
@@ -133,6 +167,9 @@ namespace H.ContentsLoader
                 MemoryBudget = r.ReadInt64(),
             };
 
+            catalog.TypeNames = new string[r.ReadInt32()];
+            for (var i = 0; i < catalog.TypeNames.Length; i++) catalog.TypeNames[i] = r.ReadString();
+
             catalog.Packs = new Pack[r.ReadInt32()];
             for (var i = 0; i < catalog.Packs.Length; i++)
             {
@@ -154,6 +191,7 @@ namespace H.ContentsLoader
                     Pack = r.ReadInt32(),
                     AssetName = r.ReadString(),
                     Delivery = (ContentDelivery)r.ReadByte(),
+                    Types = ReadInts(r),
                 };
             }
 

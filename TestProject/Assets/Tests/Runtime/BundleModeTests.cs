@@ -72,6 +72,18 @@ namespace H.ContentsLoader.Integration.Tests
         }
 
         [Test]
+        public void SamePathPicksTheAssetOfTheRequestedType()
+        {
+            var prefab = Content.Load<GameObject>("Towers/Cannon");
+            var texture = Content.Load<Texture2D>("Towers/Cannon");
+
+            Assert.That(prefab, Is.Not.Null);
+            Assert.That(texture, Is.Not.Null);
+            Assert.That(texture.width, Is.EqualTo(16));
+            Assert.That(Content.Exists("Towers/Cannon"));
+        }
+
+        [Test]
         public void LoadsTextAssets()
         {
             Assert.That(Content.Load<TextAsset>("Data/Config").text, Is.EqualTo("difficulty=normal"));

@@ -7,6 +7,8 @@ Resources처럼 폴더에 넣고 경로 문자열로 부르는 애셋 로더입�
 1. 프로젝트 어디에든 `Contents` 폴더를 만들고 애셋을 넣습니다. `Contents` 폴더는 여러 개여도 됩니다.
 2. `Contents` 아래의 상대 경로(확장자 제외)로 로드합니다.
 
+같은 `Contents` 폴더 안에서는 확장자만 다른 애셋(`Cannon.prefab`, `Cannon.png`)을 함께 둘 수 있습니다. `Load<T>`는 `Resources.Load`처럼 타입 `T`를 가진 애셋을 고릅니다. 서로 다른 `Contents` 폴더끼리 같은 경로가 겹치면 빌드 전에 오류가 납니다.
+
 ```csharp
 using H.ContentsLoader;
 
@@ -56,6 +58,13 @@ var shopUi = Content.Load<GameObject>("UI/Shop", ContentLife.App);
 | `PlayModeSource` | `AssetDatabase`는 빌드 없이 바로 읽습니다. `Bundles`는 마지막 빌드 결과에서 읽고, 다운로드는 로컬 `Remote/` 폴더에서 받습니다. |
 | `GeneratePathConstants` | 빌드할 때 `ContentPaths.Towers.Cannon` 같은 상수를 생성합니다. |
 
+## 다운로드
+
+- 중단된 다운로드는 다음 요청에서 받은 지점부터 이어 받습니다. 앱을 껐다 켜도 같습니다. 서버는 HTTP Range 요청을 지원해야 하고, 지원하지 않으면 처음부터 다시 받습니다.
+- Android에서는 OS의 `DownloadManager`가 받습니다. 앱이 백그라운드로 가거나 꺼져도 계속 받고, 앱을 다시 켜면 그 작업을 이어서 기다립니다. 받는 동안 시스템 알림이 표시됩니다.
+- Android에서 `DownloadManager`를 쓰려면 원격 주소가 HTTPS여야 합니다. Unity의 HTTP 허용 설정은 OS 서비스에 적용되지 않기 때문입니다. HTTP 주소는 경고를 남기고 앱 안에서 받습니다.
+- `GetDownloadSize`는 이미 받은 부분을 뺀 남은 크기를 반환합니다.
+
 ## 패치
 
 새 빌드의 `Remote/`를 서버에 올리고 앱에서 `await Content.UpdateCatalog()`를 부릅니다. 원격 카탈로그가 더 새로우면 적용됩니다. 팩 파일명이 내용 해시라서 바뀐 팩만 받습니다.
@@ -65,7 +74,12 @@ var shopUi = Content.Load<GameObject>("UI/Shop", ContentLife.App);
 ## 현재 제약
 
 - 씬(`.unity`)은 아직 `Contents` 대상이 아닙니다.
-- 같은 상대 경로를 가진 애셋은 확장자가 달라도 충돌로 처리합니다.
+- iOS와 데스크톱은 앱이 실행 중일 때만 받습니다. 중단되면 다음 실행에서 이어 받습니다.
 - 의존성은 파일 단위로 수집합니다.
 - AssetBundle은 번들 단위로 언로드됩니다. 같은 팩의 다른 애셋이 쓰이는 동안은 메모리가 해제되지 않습니다.
 - `Assets/` 아래의 `Contents` 폴더만 대상입니다.
+- 스크립트로 플레이어를 빌드할 때는 `ContentsBuilder.BuildPlayer`를 써야 콘텐츠가 함께 빌드됩니다.
+
+## 기기 검증
+
+저장소 루트의 `run-device-check.ps1`은 연결된 Android 기기에 검증 앱을 설치합니다. 그다음 백그라운드 다운로드와 앱 종료 후 재개를 확인합니다. PC의 로컬 서버(`tools/range_server.py`)는 `adb reverse`로 연결합니다.

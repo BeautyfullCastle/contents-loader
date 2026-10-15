@@ -1,0 +1,18 @@
+{
+  "name": "com.h.contents-loader",
+  "version": "0.1.0",
+  "displayName": "Contents Loader",
+  "description": "Resources-style asset loading with automatic bundling, deduplication, download, and scene-scoped unloading.",
+  "unity": "6000.3",
+  "dependencies": {
+    "com.unity.modules.assetbundle": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0"
+  },
+  "samples": [
+    {
+      "displayName": "Basic",
+      "description": "Loads built-in and download content by path.",
+      "path": "Samples~/Basic"
+    }
+  ]
+}

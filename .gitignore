@@ -1,0 +1,12 @@
+TestProject/[Ll]ibrary/
+TestProject/[Tt]emp/
+TestProject/[Oo]bj/
+TestProject/[Ll]ogs/
+TestProject/[Uu]ser[Ss]ettings/
+TestProject/ContentsBuild/
+TestProject/*.csproj
+TestProject/*.sln
+TestProject/*.slnx
+TestProject/.vs/
+TestProject/.idea/
+TestResults/

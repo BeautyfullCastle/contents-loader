@@ -1,0 +1,25 @@
+{
+    "name": "H.ContentsLoader.Editor.Tests",
+    "rootNamespace": "H.ContentsLoader.Editor.Tests",
+    "references": [
+        "H.ContentsLoader",
+        "H.ContentsLoader.Editor",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

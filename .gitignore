@@ -10,3 +10,5 @@ TestProject/*.slnx
 TestProject/.vs/
 TestProject/.idea/
 TestResults/
+TestProject/Builds/
+TestProject/.utmp/

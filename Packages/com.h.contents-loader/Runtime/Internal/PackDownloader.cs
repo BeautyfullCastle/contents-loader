@@ -32,8 +32,7 @@ namespace H.ContentsLoader
         // 앱이 꺼져 중단된 다운로드도 남아 있으니 남은 크기만 셈
         public long RemainingBytesOf(ContentCatalog.Pack pack)
         {
-            var partial = new FileInfo(PartialPathOf(pack.FileName));
-            return partial.Exists ? Math.Max(0, pack.Size - partial.Length) : pack.Size;
+            return Math.Max(0, pack.Size - transfer.ReceivedBytes(PartialPathOf(pack.FileName)));
         }
 
         string PartialPathOf(string fileName) => Path.Combine(cacheDirectory, fileName + ".download");

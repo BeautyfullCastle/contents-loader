@@ -33,6 +33,14 @@ namespace H.ContentsLoader.Editor
             if (!result.Success) EditorApplication.Exit(1);
         }
 
+        /// <summary>Builds content for the options' target, then builds the player with that content in StreamingAssets.</summary>
+        /// <exception cref="UnityEditor.Build.BuildFailedException">The content build failed.</exception>
+        public static UnityEditor.Build.Reporting.BuildReport BuildPlayer(BuildPlayerOptions options)
+        {
+            ContentsPlayerBuild.BuildContent(options.target);
+            return BuildPipeline.BuildPlayer(options);
+        }
+
         [MenuItem("Tools/Contents Loader/Build Content")]
         static void BuildFromMenu()
         {

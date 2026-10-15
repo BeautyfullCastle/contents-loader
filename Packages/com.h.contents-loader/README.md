@@ -37,7 +37,8 @@ var shopUi = Content.Load<GameObject>("UI/Shop", ContentLife.App);
 ## 빌드
 
 - 메뉴 `Tools > Contents Loader > Build Content`, 또는 `-executeMethod H.ContentsLoader.Editor.ContentsBuilder.BuildFromCommandLine`
-- 플레이어 빌드 때는 자동으로 콘텐츠를 빌드하고 `StreamingAssets`에 포함합니다(`BuildWithPlayer`).
+- Build Settings 창에서 플레이어를 빌드하면 콘텐츠를 먼저 빌드하고 `StreamingAssets`에 포함합니다(`BuildWithPlayer`).
+- 스크립트로 빌드할 때는 `BuildPipeline.BuildPlayer` 대신 `ContentsBuilder.BuildPlayer(options)`를 씁니다. Unity는 플레이어 빌드 콜백 안에서 번들을 빌드하면 크래시하므로 콘텐츠를 먼저 빌드해야 합니다.
 - 출력은 프로젝트 루트의 `ContentsBuild/<BuildTarget>/`입니다.
   - `BuiltIn/`: 앱에 들어가는 LZ4 팩과 카탈로그
   - `Remote/`: 서버에 올릴 LZMA 팩 전체와 카탈로그. `RemoteUrl`에 올립니다.

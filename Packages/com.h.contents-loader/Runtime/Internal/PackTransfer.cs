@@ -10,6 +10,8 @@ namespace H.ContentsLoader
     {
         // destination에 받던 파일이 있으면 그 뒤부터 이어 받음. 실패해도 받은 부분은 남김
         Task Fetch(string url, string destination, long expectedSize, Action<long> reportBytes);
+
+        long ReceivedBytes(string destination);
     }
 
     internal static class PackTransfer
@@ -26,6 +28,8 @@ namespace H.ContentsLoader
 
     internal sealed class UnityWebRequestTransfer : IPackTransfer
     {
+        public long ReceivedBytes(string destination) => File.Exists(destination) ? new FileInfo(destination).Length : 0;
+
         public async Task Fetch(string url, string destination, long expectedSize, Action<long> reportBytes)
         {
             // 서버가 Range를 무시하면 처음부터 한 번 더 받음

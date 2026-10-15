@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36535240d029af34291294d33cd0bd74, type: 3}
+  m_Name: ContentsSettings
+  m_EditorClassIdentifier: H.ContentsLoader.Editor::H.ContentsLoader.Editor.ContentsSettings
+  folderRules:
+  - Guid: 091adf65361265440b7a61dfe845270f
+    Delivery: 1
+  RemoteUrl: https://cdn.invalid/contents/{Platform}
+  MemoryBudgetMB: 0
+  SmallPackThresholdKB: 64
+  SignatureByFolder: 0
+  IgnorePreviousLayout: 0
+  PlayModeSource: 0
+  BuildWithPlayer: 1
+  GeneratePathConstants: 0
+  PathConstantsFile: Assets/ContentsLoader.Generated/ContentPaths.cs

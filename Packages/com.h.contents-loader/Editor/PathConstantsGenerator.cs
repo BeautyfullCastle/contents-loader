@@ -44,7 +44,10 @@ namespace H.ContentsLoader.Editor
                     if (!folder.Children.TryGetValue(name, out var child)) folder.Children.Add(name, child = new Folder());
                     folder = child;
                 }
-                folder.Paths[Identifier(parts[^1])] = path;
+                var constant = Identifier(parts[^1]);
+                // 이름 정리 후 겹치면 컴파일 오류가 나므로 뒤에 _를 붙여 구분함
+                while (folder.Paths.ContainsKey(constant)) constant += "_";
+                folder.Paths[constant] = path;
             }
 
             var code = new StringBuilder();

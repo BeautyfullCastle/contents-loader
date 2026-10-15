@@ -22,7 +22,7 @@ namespace H.ContentsLoader.Integration.Tests
 
             Assert.That(cannon, Is.Not.Null);
             Assert.That(cannon.name, Is.EqualTo("Cannon"));
-            Assert.That(ContentSystem.Lifetime.Backend.Name, Is.EqualTo("AssetDatabase"));
+            Assert.That(ContentSystem.Lifetime.Backend.GetType().Name, Is.EqualTo("AssetDatabaseBackend"));
         }
 
         [Test]

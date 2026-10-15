@@ -65,7 +65,7 @@ namespace H.ContentsLoader.Integration.Tests
             var cannon = Content.Load<GameObject>("Towers/Cannon");
 
             Assert.That(cannon, Is.Not.Null);
-            Assert.That(ContentSystem.Lifetime.Backend.Name, Is.EqualTo("AssetBundle"));
+            Assert.That(ContentSystem.Lifetime.Backend, Is.SameAs(backend));
             var materials = cannon.GetComponentsInChildren<MeshRenderer>().Select(r => r.sharedMaterial).ToList();
             Assert.That(materials.Select(m => m.name), Is.EquivalentTo(new[] { "Cannon", "Shared" }));
             Assert.That(materials.All(m => m.mainTexture != null));

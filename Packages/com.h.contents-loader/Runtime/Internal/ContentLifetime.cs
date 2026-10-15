@@ -9,82 +9,18 @@ using Object = UnityEngine.Object;
 
 namespace H.ContentsLoader
 {
-    internal enum ContentState
-    {
-        Loading,
-        Owned,
-        Cached,
-        Unloaded,
-    }
-
-    internal enum ContentEventKind
-    {
-        Load,
-        CacheHit,
-        Cached,
-        Unload,
-        Evict,
-    }
-
-    internal readonly struct ContentEvent
-    {
-        public readonly ContentEventKind Kind;
-        public readonly string Path;
-        public readonly int Frame;
-
-        public ContentEvent(ContentEventKind kind, string path, int frame)
-        {
-            Kind = kind;
-            Path = path;
-            Frame = frame;
-        }
-    }
-
-    internal readonly struct ContentOwner
-    {
-        public static readonly ContentOwner App = new(default, true);
-
-        public readonly Scene Scene;
-        public readonly bool IsApp;
-
-        ContentOwner(Scene scene, bool isApp)
-        {
-            Scene = scene;
-            IsApp = isApp;
-        }
-
-        public static ContentOwner Of(Scene scene) => new(scene, false);
-    }
-
-    internal sealed class ContentRecord
-    {
-        public string Path;
-        public Type Type;
-        public ContentState State;
-        public readonly HashSet<Scene> Scenes = new();
-        public bool App;
-        public IContentLease Lease;
-        public Task<Object> Loading;
-        public int LastUsedFrame;
-        public long Size;
-
-        public Object Asset => Lease?.Asset;
-        public bool HasOwners => App || Scenes.Count > 0;
-    }
-
-    // 상태: Loading -> Owned <-> Cached -> Unloaded
     internal sealed class ContentLifetime
     {
         readonly IContentBackend backend;
         readonly Dictionary<(string, Type), ContentRecord> records = new();
         int lastSceneEventFrame;
         bool sweepPending;
+        long loadedSize;
 
         public Func<int> Frame = () => Time.frameCount;
         public Func<Object, long> SizeOf = Profiler.GetRuntimeMemorySizeLong;
         public long MemoryBudget;
         public int BackendLoadCount { get; private set; }
-        public event Action<ContentEvent> Changed;
 
         public ContentLifetime(IContentBackend backend)
         {
@@ -189,8 +125,8 @@ namespace H.ContentsLoader
             {
                 if (!record.Scenes.Remove(scene) || record.HasOwners || record.State != ContentState.Owned) continue;
                 record.State = ContentState.Cached;
-                Raise(ContentEventKind.Cached, record);
             }
+            EnforceBudget();
         }
 
         public void OnSceneLoaded(Scene scene) => MarkSceneEvent();
@@ -198,19 +134,16 @@ namespace H.ContentsLoader
         // 씬 전환 다음 프레임까지 기다려야 새 씬이 같은 애셋을 다시 가져갈 기회가 생김
         public void Tick()
         {
-            if (sweepPending && Frame() > lastSceneEventFrame)
-            {
-                sweepPending = false;
-                foreach (var record in records.Values.Where(r => r.State == ContentState.Cached).ToList())
-                    Unload(record, ContentEventKind.Unload);
-            }
-            EnforceBudget();
+            if (!sweepPending || Frame() <= lastSceneEventFrame) return;
+            sweepPending = false;
+            foreach (var record in records.Values.Where(r => r.State == ContentState.Cached).ToList())
+                Unload(record);
         }
 
         public void UnloadAll()
         {
             foreach (var record in records.Values.ToList())
-                Unload(record, ContentEventKind.Unload);
+                Unload(record);
         }
 
         void MarkSceneEvent()
@@ -229,7 +162,9 @@ namespace H.ContentsLoader
         void Remove(ContentRecord record)
         {
             record.State = ContentState.Unloaded;
-            records.Remove((record.Path, record.Type));
+            // 해제 후 같은 키로 새 레코드가 생겼을 수 있으니 자기 것만 지움
+            var key = (record.Path, record.Type);
+            if (records.TryGetValue(key, out var current) && current == record) records.Remove(key);
         }
 
         void Claim(ContentRecord record, ContentOwner owner)
@@ -237,10 +172,7 @@ namespace H.ContentsLoader
             if (owner.IsApp) record.App = true;
             else record.Scenes.Add(owner.Scene);
             record.LastUsedFrame = Frame();
-
-            if (record.State != ContentState.Cached) return;
-            record.State = ContentState.Owned;
-            Raise(ContentEventKind.CacheHit, record);
+            if (record.State == ContentState.Cached) record.State = ContentState.Owned;
         }
 
         void Attach(ContentRecord record, IContentLease lease)
@@ -260,40 +192,34 @@ namespace H.ContentsLoader
 
             record.Lease = lease;
             record.Size = SizeOf(lease.Asset);
+            loadedSize += record.Size;
             record.State = record.HasOwners ? ContentState.Owned : ContentState.Cached;
             if (record.State == ContentState.Cached) sweepPending = true;
-            Raise(ContentEventKind.Load, record);
             EnforceBudget();
         }
 
-        void Unload(ContentRecord record, ContentEventKind kind)
+        void Unload(ContentRecord record)
         {
-            record.Lease?.Release();
-            record.Lease = null;
+            if (record.Lease != null)
+            {
+                record.Lease.Release();
+                record.Lease = null;
+                loadedSize -= record.Size;
+            }
             Remove(record);
-            Raise(kind, record);
         }
 
         void EnforceBudget()
         {
-            if (MemoryBudget <= 0 || MemoryBudget == long.MaxValue) return;
-
-            var total = records.Values.Sum(r => r.Size);
-            while (total > MemoryBudget)
+            while (loadedSize > MemoryBudget)
             {
                 var oldest = records.Values
                     .Where(r => r.State == ContentState.Cached)
                     .OrderBy(r => r.LastUsedFrame)
                     .FirstOrDefault();
                 if (oldest == null) return;
-                total -= oldest.Size;
-                Unload(oldest, ContentEventKind.Evict);
+                Unload(oldest);
             }
-        }
-
-        void Raise(ContentEventKind kind, ContentRecord record)
-        {
-            Changed?.Invoke(new ContentEvent(kind, record.Path, Frame()));
         }
 
         static Object NotDownloaded(string path)

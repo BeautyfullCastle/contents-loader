@@ -8,9 +8,25 @@ namespace H.ContentsLoader.Editor
     {
         static readonly GUIContent Label = new("Delivery", "Built-in packs ship with the app. Download packs are fetched on first use.");
 
+        static ContentsSettings cached;
+        static bool resolved;
+
         static ContentsFolderHeader()
         {
             UnityEditor.Editor.finishedDefaultHeaderGUI += OnHeaderGUI;
+            EditorApplication.projectChanged += () => resolved = false;
+        }
+
+        // 헤더는 repaint마다 그려져서 FindAssets를 매번 부르면 느림
+        static ContentsSettings Settings
+        {
+            get
+            {
+                if (resolved) return cached;
+                cached = ContentsSettings.Find();
+                resolved = true;
+                return cached;
+            }
         }
 
         static void OnHeaderGUI(UnityEditor.Editor editor)
@@ -20,7 +36,7 @@ namespace H.ContentsLoader.Editor
             if (!AssetDatabase.IsValidFolder(folder)) return;
             if (!ContentsScanner.TryGetContentsFolder(folder, out var root)) return;
 
-            var settings = ContentsSettings.Find();
+            var settings = Settings;
             var guid = AssetDatabase.AssetPathToGUID(folder);
             var own = settings != null ? settings.GetRule(guid) : null;
             var inherited = settings != null && folder != root
@@ -39,7 +55,7 @@ namespace H.ContentsLoader.Editor
             var next = EditorGUILayout.Popup(Label, selected, options);
             if (!EditorGUI.EndChangeCheck()) return;
 
-            settings = ContentsSettings.GetOrCreate();
+            settings = cached = ContentsSettings.GetOrCreate();
             settings.SetRule(guid, next == 0 ? null : (ContentDelivery)(next - 1));
             AssetDatabase.SaveAssetIfDirty(settings);
         }

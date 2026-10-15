@@ -37,7 +37,6 @@ namespace H.ContentsLoader.Tests
         public TaskCompletionSource<bool> AsyncGate;
         public int Loads;
 
-        public string Name => "Fake";
         public bool SupportsPartialUnload => true;
         public long MemoryBudget { get; set; } = long.MaxValue;
 

@@ -24,7 +24,6 @@ namespace H.ContentsLoader.Editor
             MemoryBudget = memoryBudget;
         }
 
-        public string Name => "AssetDatabase";
         public bool SupportsPartialUnload => true;
         public long MemoryBudget { get; }
 

@@ -114,16 +114,16 @@ namespace H.ContentsLoader.Tests
             var frame = 0;
             lifetime.Frame = () => frame;
             lifetime.SizeOf = _ => 100;
+            lifetime.MemoryBudget = 250;
             var a = CreateScene("A");
             var keep = CreateScene("Keep");
 
             frame = 1; Load("Big1", a);
             frame = 2; Load("Big2", a);
             frame = 3; Load("Big3", keep);
-            lifetime.OnSceneUnloaded(a);
+            Assert.That(StateOf("Big1"), Is.EqualTo(ContentState.Owned), "Owned 애셋은 예산을 넘어도 유지함");
 
-            lifetime.MemoryBudget = 250;
-            lifetime.Tick();
+            lifetime.OnSceneUnloaded(a);
 
             Assert.That(StateOf("Big1"), Is.Null);
             Assert.That(StateOf("Big2"), Is.EqualTo(ContentState.Cached));

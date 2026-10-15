@@ -93,7 +93,16 @@ namespace H.ContentsLoader.Editor
             return settings;
         }
 
+        static ContentsSettings defaults;
+
         // 설정 애셋이 없어도 빌드와 에디터 로드가 동작하게 기본값을 씀
-        internal static ContentsSettings FindOrDefault() => Find() ?? CreateInstance<ContentsSettings>();
+        internal static ContentsSettings FindOrDefault()
+        {
+            var settings = Find();
+            if (settings != null) return settings;
+            if (defaults == null) defaults = CreateInstance<ContentsSettings>();
+            defaults.hideFlags = HideFlags.DontSave;
+            return defaults;
+        }
     }
 }

@@ -19,8 +19,6 @@ namespace H.ContentsLoader
 
     internal interface IContentBackend : IDisposable
     {
-        string Name { get; }
-
         // false면 같은 저장 단위의 다른 애셋이 살아 있는 동안 메모리가 실제로 해제되지 않음
         bool SupportsPartialUnload { get; }
 

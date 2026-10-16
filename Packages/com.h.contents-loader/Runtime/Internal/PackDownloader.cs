@@ -9,10 +9,10 @@ namespace H.ContentsLoader
 {
     internal sealed class PackDownloader
     {
-        readonly string cacheDirectory;
-        readonly Func<string> remoteUrl;
-        readonly IPackTransfer transfer;
-        readonly Dictionary<string, Task> running = new();
+        private readonly string cacheDirectory;
+        private readonly Func<string> remoteUrl;
+        private readonly IPackTransfer transfer;
+        private readonly Dictionary<string, Task> running = new();
 
         public PackDownloader(string cacheDirectory, Func<string> remoteUrl, IPackTransfer transfer)
         {
@@ -35,7 +35,37 @@ namespace H.ContentsLoader
             return Math.Max(0, pack.Size - transfer.ReceivedBytes(PartialPathOf(pack.FileName)));
         }
 
-        string PartialPathOf(string fileName) => Path.Combine(cacheDirectory, fileName + ".download");
+        private string PartialPathOf(string fileName) => Path.Combine(cacheDirectory, fileName + ".download");
+
+        // 카탈로그가 더는 참조하지 않는 팩과 받다 만 파일을 지움. 패치나 Delivery 변경 뒤 남는 고아 파일 정리용
+        // 받는 중이거나 열려 있는 팩은 건드리지 않음
+        public int RemoveUnused(ICollection<string> keepFileNames, ICollection<string> inUse)
+        {
+            if (!Directory.Exists(cacheDirectory)) return 0;
+            var removed = 0;
+            foreach (var path in Directory.GetFiles(cacheDirectory))
+            {
+                var pack = StripSuffix(Path.GetFileName(path));
+                if (keepFileNames.Contains(pack) || inUse.Contains(pack) || running.ContainsKey(pack)) continue;
+                try
+                {
+                    File.Delete(path);
+                    removed++;
+                }
+                catch (IOException)
+                {
+                    // 다른 곳에서 열려 있으면 다음 기회에 지움
+                }
+            }
+            return removed;
+        }
+
+        private static string StripSuffix(string name)
+        {
+            foreach (var suffix in new[] { ".download.id", ".download", ".lz4", ".id" })
+                if (name.EndsWith(suffix, StringComparison.Ordinal)) return name.Substring(0, name.Length - suffix.Length);
+            return name;
+        }
 
         public async Task Download(IReadOnlyList<ContentCatalog.Pack> packs, IProgress<float> progress)
         {
@@ -49,7 +79,7 @@ namespace H.ContentsLoader
             progress?.Report(1f);
         }
 
-        async Task DownloadOne(ContentCatalog.Pack pack, Action<long> reportBytes)
+        private async Task DownloadOne(ContentCatalog.Pack pack, Action<long> reportBytes)
         {
             if (CachedPathOf(pack.FileName) != null) return;
             if (running.TryGetValue(pack.FileName, out var existing))
@@ -70,7 +100,7 @@ namespace H.ContentsLoader
             }
         }
 
-        async Task Fetch(ContentCatalog.Pack pack, Action<long> reportBytes)
+        private async Task Fetch(ContentCatalog.Pack pack, Action<long> reportBytes)
         {
             Directory.CreateDirectory(cacheDirectory);
             var url = $"{remoteUrl()}/{pack.FileName}";
@@ -93,6 +123,7 @@ namespace H.ContentsLoader
 
             if (File.Exists(target)) File.Delete(target);
             File.Move(recompressed, target);
+            CacheFiles.ExcludeFromBackup(target);
             DownloadCount++;
         }
     }

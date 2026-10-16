@@ -8,8 +8,8 @@ namespace H.ContentsLoader
     internal sealed class ContentCatalog
     {
         public const string FileName = "catalog.bin";
-        const int FormatVersion = 2;
-        static readonly byte[] Magic = { (byte)'H', (byte)'C', (byte)'L', (byte)'C' };
+        private const int FormatVersion = 2;
+        private static readonly byte[] Magic = { (byte)'H', (byte)'C', (byte)'L', (byte)'C' };
 
         public struct Pack
         {
@@ -91,7 +91,7 @@ namespace H.ContentsLoader
             Array.Sort(Groups, (a, b) => a.FolderHash.CompareTo(b.FolderHash));
         }
 
-        static int BinarySearch<T>(T[] items, ulong key, Func<T, ulong> keyOf)
+        private static int BinarySearch<T>(T[] items, ulong key, Func<T, ulong> keyOf)
         {
             int lo = 0, hi = items.Length - 1;
             while (lo <= hi)
@@ -207,14 +207,14 @@ namespace H.ContentsLoader
             return catalog;
         }
 
-        static void WriteInts(BinaryWriter w, IReadOnlyCollection<int> values)
+        private static void WriteInts(BinaryWriter w, IReadOnlyCollection<int> values)
         {
             values ??= Array.Empty<int>();
             w.Write(values.Count);
             foreach (var v in values) w.Write(v);
         }
 
-        static int[] ReadInts(BinaryReader r)
+        private static int[] ReadInts(BinaryReader r)
         {
             var values = new int[r.ReadInt32()];
             for (var i = 0; i < values.Length; i++) values[i] = r.ReadInt32();

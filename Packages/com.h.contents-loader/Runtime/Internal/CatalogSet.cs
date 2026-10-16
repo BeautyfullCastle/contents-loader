@@ -1,17 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace H.ContentsLoader
 {
     // 원격 카탈로그가 있으면 먼저 찾고, 없는 경로는 내장 카탈로그에서 찾음
     internal sealed class CatalogSet
     {
-        readonly string remotePath;
-        ContentCatalog remote;
+        private readonly string remotePath;
+        private ContentCatalog remote;
 
         public CatalogSet(string builtInRoot, string cacheRoot)
         {
@@ -23,7 +23,7 @@ namespace H.ContentsLoader
         public ContentCatalog BuiltIn { get; }
         public ContentCatalog Current => remote ?? BuiltIn;
 
-        IEnumerable<ContentCatalog> Layers
+        private IEnumerable<ContentCatalog> Layers
         {
             get
             {
@@ -57,7 +57,7 @@ namespace H.ContentsLoader
             return Enumerable.Empty<ContentCatalog.Pack>();
         }
 
-        static ContentCatalog.Pack[] PacksOf(ContentCatalog layer, ContentCatalog.Entry entry)
+        private static ContentCatalog.Pack[] PacksOf(ContentCatalog layer, ContentCatalog.Entry entry)
         {
             var main = layer.Packs[entry.Pack];
             return main.Dependencies.Select(i => layer.Packs[i]).Prepend(main).ToArray();
@@ -82,11 +82,12 @@ namespace H.ContentsLoader
 
             Directory.CreateDirectory(Path.GetDirectoryName(remotePath)!);
             File.WriteAllBytes(remotePath, bytes);
+            CacheFiles.ExcludeFromBackup(remotePath);
             remote = catalog;
             return true;
         }
 
-        ContentCatalog ReadCachedRemote()
+        private ContentCatalog ReadCachedRemote()
         {
             if (!File.Exists(remotePath)) return null;
             try
@@ -103,25 +104,35 @@ namespace H.ContentsLoader
             return null;
         }
 
-        static ContentCatalog ReadBuiltIn(string path)
+        private static ContentCatalog ReadBuiltIn(string path)
         {
-            byte[] bytes;
-            if (path.Contains("://"))
-            {
-                // Android의 StreamingAssets는 APK 안에 있어서 File API로 못 읽음
-                using var request = UnityWebRequest.Get(path);
-                var operation = request.SendWebRequest();
-                while (!operation.isDone) { }
-                bytes = request.result == UnityWebRequest.Result.Success ? request.downloadHandler.data : null;
-            }
-            else
-            {
-                bytes = File.Exists(path) ? File.ReadAllBytes(path) : null;
-            }
-
+            var bytes = path.Contains("!/") ? ReadFromArchive(path) : File.Exists(path) ? File.ReadAllBytes(path) : null;
             if (bytes != null) return ContentCatalog.FromBytes(bytes);
             Debug.LogWarning($"[Contents Loader] 카탈로그가 없습니다: {path}. 콘텐츠를 빌드했는지 확인하세요.");
             return new ContentCatalog();
+        }
+
+        // Android의 StreamingAssets는 APK(zip) 안에 있어서 File API로 못 읽음
+        // UnityWebRequest는 비동기라 동기 Load를 위해 기다리면 메인 스레드가 막힘. zip 목차만 읽고 항목 하나를 바로 꺼냄
+        // 형식: jar:file:///data/app/.../base.apk!/assets/ContentsLoader/catalog.bin
+        internal static byte[] ReadFromArchive(string url)
+        {
+            var bang = url.IndexOf("!/", StringComparison.Ordinal);
+            var archive = url.Substring(0, bang);
+            var scheme = archive.IndexOf("file://", StringComparison.Ordinal);
+            if (scheme >= 0) archive = archive.Substring(scheme + "file://".Length);
+            // Path.Combine이 붙인 구분자가 섞여도 zip 항목 이름은 항상 '/'임
+            var entryName = url.Substring(bang + 2).Replace('\\', '/');
+            if (!File.Exists(archive)) return null;
+
+            using var stream = File.OpenRead(archive);
+            using var zip = new ZipArchive(stream, ZipArchiveMode.Read);
+            var entry = zip.GetEntry(entryName);
+            if (entry == null) return null;
+            using var input = entry.Open();
+            using var output = new MemoryStream((int)entry.Length);
+            input.CopyTo(output);
+            return output.ToArray();
         }
     }
 }

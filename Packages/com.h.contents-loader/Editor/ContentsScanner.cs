@@ -23,7 +23,7 @@ namespace H.ContentsLoader.Editor
     {
         public const string FolderName = "Contents";
 
-        static readonly HashSet<string> IgnoredExtensions = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly HashSet<string> IgnoredExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
             ".cs", ".asmdef", ".asmref", ".dll", ".meta",
         };

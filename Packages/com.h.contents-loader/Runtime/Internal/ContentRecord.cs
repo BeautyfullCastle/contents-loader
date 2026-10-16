@@ -6,11 +6,11 @@ using Object = UnityEngine.Object;
 
 namespace H.ContentsLoader
 {
-    // Loading -> Owned <-> Cached -> Unloaded
+    // Loading -> Loaded <-> Cached -> Unloaded
     internal enum ContentState
     {
         Loading,
-        Owned,
+        Loaded,
         Cached,
         Unloaded,
     }
@@ -22,7 +22,7 @@ namespace H.ContentsLoader
         public readonly Scene Scene;
         public readonly bool IsApp;
 
-        ContentOwner(Scene scene, bool isApp)
+        private ContentOwner(Scene scene, bool isApp)
         {
             Scene = scene;
             IsApp = isApp;

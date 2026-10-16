@@ -9,14 +9,14 @@ namespace H.ContentsLoader.Editor
     // 오타 방지용 상수. ContentPaths.Towers.Cannon == "Towers/Cannon"
     internal static class PathConstantsGenerator
     {
-        sealed class Folder
+        private sealed class Folder
         {
             public readonly SortedDictionary<string, Folder> Children = new(System.StringComparer.Ordinal);
             public readonly SortedDictionary<string, string> Paths = new(System.StringComparer.Ordinal);
         }
 
         [MenuItem("Tools/Contents Loader/Generate Path Constants")]
-        static void GenerateFromMenu()
+        private static void GenerateFromMenu()
         {
             var settings = ContentsSettings.FindOrDefault();
             Write(settings.PathConstantsFile, ContentsScanner.ScanProject().Entries.Select(e => e.Path));
@@ -59,7 +59,7 @@ namespace H.ContentsLoader.Editor
             return code.ToString();
         }
 
-        static void WriteFolder(StringBuilder code, Folder folder, int depth, string className)
+        private static void WriteFolder(StringBuilder code, Folder folder, int depth, string className)
         {
             var indent = new string(' ', depth * 4);
             foreach (var kv in folder.Paths)
@@ -77,7 +77,7 @@ namespace H.ContentsLoader.Editor
             }
         }
 
-        static string Identifier(string name)
+        private static string Identifier(string name)
         {
             var builder = new StringBuilder();
             foreach (var c in name) builder.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');

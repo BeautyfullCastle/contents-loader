@@ -11,9 +11,9 @@ namespace H.ContentsLoader.Integration.Tests
     [PrebuildSetup("H.ContentsLoader.Integration.Editor.PatchBuildSetup")]
     public class PatchTests
     {
-        const string Root = "Library/ContentsLoaderPatchTest";
-        string cacheRoot;
-        AssetBundleBackend backend;
+        private const string Root = "Library/ContentsLoaderPatchTest";
+        private string cacheRoot;
+        private AssetBundleBackend backend;
 
         [SetUp]
         public void SetUp()
@@ -29,7 +29,7 @@ namespace H.ContentsLoader.Integration.Tests
             if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, true);
         }
 
-        void Start()
+        private void Start()
         {
             ContentSystem.Shutdown();
             backend = new AssetBundleBackend(new AssetBundleBackendOptions
@@ -41,7 +41,7 @@ namespace H.ContentsLoader.Integration.Tests
             ContentSystem.Initialize(backend);
         }
 
-        static IEnumerator Wait(System.Threading.Tasks.Task task)
+        private static IEnumerator Wait(System.Threading.Tasks.Task task)
         {
             yield return new WaitUntil(() => task.IsCompleted);
             if (task.IsFaulted) throw task.Exception!.InnerException!;

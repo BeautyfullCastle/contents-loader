@@ -9,8 +9,8 @@ namespace H.ContentsLoader
         // 에디터 어셈블리가 InitializeOnLoad에서 채움. 런타임 어셈블리는 UnityEditor를 참조하지 않음
         internal static Func<IContentBackend> EditorBackendFactory;
 
-        static ContentLifetime lifetime;
-        static ContentRunner runner;
+        private static ContentLifetime lifetime;
+        private static ContentRunner runner;
 
         public static ContentLifetime Lifetime
         {
@@ -54,11 +54,11 @@ namespace H.ContentsLoader
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetOnPlay() => Shutdown();
+        private static void ResetOnPlay() => Shutdown();
 
         internal static void Tick() => lifetime?.Tick();
 
-        static IContentBackend CreateDefaultBackend()
+        private static IContentBackend CreateDefaultBackend()
         {
             return EditorBackendFactory?.Invoke() ?? new AssetBundleBackend(AssetBundleBackendOptions.ForPlayer());
         }
@@ -79,13 +79,13 @@ namespace H.ContentsLoader
             return IsDontDestroyOnLoad(scene) ? ContentOwner.App : ContentOwner.Of(scene);
         }
 
-        static bool IsDontDestroyOnLoad(Scene scene)
+        private static bool IsDontDestroyOnLoad(Scene scene)
         {
             return runner != null ? scene == runner.gameObject.scene : scene.buildIndex == -1 && scene.name == "DontDestroyOnLoad";
         }
 
-        static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => lifetime?.OnSceneLoaded(scene);
+        private static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => lifetime?.OnSceneLoaded(scene);
 
-        static void OnSceneUnloaded(Scene scene) => lifetime?.OnSceneUnloaded(scene);
+        private static void OnSceneUnloaded(Scene scene) => lifetime?.OnSceneUnloaded(scene);
     }
 }

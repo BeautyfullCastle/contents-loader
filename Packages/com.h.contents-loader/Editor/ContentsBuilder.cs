@@ -12,6 +12,9 @@ namespace H.ContentsLoader.Editor
         public readonly List<string> Errors = new();
         public readonly List<string> Warnings = new();
         public ClusterResult Clusters;
+
+        // 명시 배정하지 않고 Unity가 참조된 하위 오브젝트만 넣게 둔 의존 애셋(GUID)
+        public readonly HashSet<string> ImplicitMembers = new();
         public ContentCatalog Catalog;
         public readonly Dictionary<string, string> FileOfPack = new();
         public string BuiltInDirectory;
@@ -23,8 +26,8 @@ namespace H.ContentsLoader.Editor
 
     public static class ContentsBuilder
     {
-        const string Lz4Folder = "lz4";
-        const string LzmaFolder = "lzma";
+        private const string Lz4Folder = "lz4";
+        private const string LzmaFolder = "lzma";
 
         /// <summary>Entry point for <c>-executeMethod</c>. Builds for the active build target and exits with code 1 on failure.</summary>
         public static void BuildFromCommandLine()
@@ -41,13 +44,23 @@ namespace H.ContentsLoader.Editor
             return BuildPipeline.BuildPlayer(options);
         }
 
+        /// <summary>Builds content for a target. Errors and warnings go to the console.</summary>
+        /// <returns>True when the build succeeded.</returns>
+        public static bool BuildContent(BuildTarget target) => Build(target).Success;
+
+        /// <summary>Builds content for the editor's own platform, which the Bundles play mode source reads.</summary>
+        public static bool BuildForPlayMode() => BuildContent(ContentsBuildPaths.PlayModeTarget);
+
         [MenuItem("Tools/Contents Loader/Build Content")]
-        static void BuildFromMenu()
+        private static void BuildFromMenu()
         {
             var result = Build(EditorUserBuildSettings.activeBuildTarget);
             if (result.Success)
                 EditorUtility.RevealInFinder(ContentsBuildPaths.Root(EditorUserBuildSettings.activeBuildTarget));
         }
+
+        [MenuItem("Tools/Contents Loader/Build Content for Play Mode")]
+        private static void BuildForPlayModeFromMenu() => BuildForPlayMode();
 
         internal static ContentsBuildResult Build(BuildTarget target, ContentsSettings settings = null, IDependencyCollector collector = null)
         {
@@ -80,13 +93,16 @@ namespace H.ContentsLoader.Editor
             {
                 SmallPackThreshold = settings.SmallPackThresholdKB * 1024L,
                 SignatureByGroup = settings.SignatureByFolder,
+                MaxReuseWaste = settings.RepackWastePercent / 100f,
             }, previous);
             WarnNestedRootPrefabs(entries, guidOf, result);
+            WarnDeliveryChanges(previous ?? ReadLayout(target), result, entries, guidOf);
+            result.ImplicitMembers.UnionWith(SelectImplicitMembers(result.Clusters, nodes, roots.Select(r => r.Key)));
 
             var builds = result.Clusters.Layout.Packs.Select(p => new AssetBundleBuild
             {
                 assetBundleName = p.Id,
-                assetNames = p.Members.Select(AssetDatabase.GUIDToAssetPath).ToArray(),
+                assetNames = p.Members.Where(m => !result.ImplicitMembers.Contains(m)).Select(AssetDatabase.GUIDToAssetPath).ToArray(),
             }).ToArray();
             if (builds.Length == 0)
             {
@@ -114,13 +130,14 @@ namespace H.ContentsLoader.Editor
 
             WriteOutput(result, needsRemote);
             WriteLayout(target, result.Clusters.Layout);
+            WriteContentTypes(target, result);
             ContentsBuildReport.Write(target, result, entries, guidOf);
             if (settings.GeneratePathConstants)
                 PathConstantsGenerator.Write(settings.PathConstantsFile, entries.Select(e => e.Path));
             return Finish(result);
         }
 
-        static ContentsBuildResult Finish(ContentsBuildResult result)
+        private static ContentsBuildResult Finish(ContentsBuildResult result)
         {
             foreach (var warning in result.Warnings) Debug.LogWarning($"[Contents Loader] {warning}");
             foreach (var error in result.Errors) Debug.LogError($"[Contents Loader] {error}");
@@ -135,13 +152,13 @@ namespace H.ContentsLoader.Editor
             return slash < 0 ? "" : contentPath.Substring(0, slash);
         }
 
-        sealed class BuiltBundles
+        private sealed class BuiltBundles
         {
             public readonly Dictionary<string, string> Hashes = new();
             public readonly Dictionary<string, string[]> Dependencies = new();
         }
 
-        static BuiltBundles BuildBundles(ContentsBuildResult result, AssetBundleBuild[] builds,
+        private static BuiltBundles BuildBundles(ContentsBuildResult result, AssetBundleBuild[] builds,
             BuildAssetBundleOptions compression, string folder, BuildTarget target)
         {
             var output = $"{result.WorkDirectory}/{folder}";
@@ -164,7 +181,7 @@ namespace H.ContentsLoader.Editor
             return built;
         }
 
-        static void VerifyDeliveryBoundary(ContentsBuildResult result, BuiltBundles bundles)
+        private static void VerifyDeliveryBoundary(ContentsBuildResult result, BuiltBundles bundles)
         {
             var deliveryOf = result.Clusters.Layout.Packs.ToDictionary(p => p.Id, p => p.Delivery);
             foreach (var pack in result.Clusters.Layout.Packs.Where(p => p.Delivery == ContentDelivery.BuiltIn))
@@ -173,7 +190,7 @@ namespace H.ContentsLoader.Editor
                     result.Errors.Add($"Built-in 팩 {pack.Id}이(가) Download 팩 {dependency}에 의존합니다.");
         }
 
-        static void WriteOutput(ContentsBuildResult result, bool remote)
+        private static void WriteOutput(ContentsBuildResult result, bool remote)
         {
             ResetDirectory(result.BuiltInDirectory);
             var bytes = result.Catalog.ToBytes();
@@ -189,25 +206,77 @@ namespace H.ContentsLoader.Editor
                 File.Copy($"{result.WorkDirectory}/{LzmaFolder}/{pack.Id}", $"{result.RemoteDirectory}/{result.FileOfPack[pack.Id]}");
         }
 
-        static void ResetDirectory(string path)
+        private static void ResetDirectory(string path)
         {
             if (Directory.Exists(path)) Directory.Delete(path, true);
             Directory.CreateDirectory(path);
         }
 
-        static PackLayout ReadLayout(BuildTarget target)
+        private static PackLayout ReadLayout(BuildTarget target)
         {
             var path = ContentsBuildPaths.Layout(target);
             return File.Exists(path) ? JsonUtility.FromJson<PackLayout>(File.ReadAllText(path)) : null;
         }
 
-        static void WriteLayout(BuildTarget target, PackLayout layout)
+        private static void WriteLayout(BuildTarget target, PackLayout layout)
         {
             File.WriteAllText(ContentsBuildPaths.Layout(target), JsonUtility.ToJson(layout, true));
         }
 
+        // 명시 배정한 애셋은 파일 안의 오브젝트가 전부 번들에 들어감. FBX에서 메시 하나만 써도 나머지 메시와 애니메이션까지 따라옴
+        // 배정하지 않은 의존 애셋은 Unity가 참조된 오브젝트만 넣음. 대신 참조하는 번들마다 복제하므로,
+        // 직접 참조하는 쪽이 전부 같은 팩일 때만 배정을 빼서 복제 없이 필요한 오브젝트만 넣음
+        internal static HashSet<string> SelectImplicitMembers(ClusterResult clusters, IReadOnlyDictionary<string, ClusterNode> nodes, IEnumerable<string> rootKeys)
+        {
+            var roots = new HashSet<string>(rootKeys);
+            var referrers = new Dictionary<string, List<string>>();
+            foreach (var node in nodes.Values)
+            foreach (var dependency in node.Dependencies)
+            {
+                if (!referrers.TryGetValue(dependency, out var list)) referrers.Add(dependency, list = new List<string>());
+                list.Add(node.Key);
+            }
+
+            var selected = new HashSet<string>();
+            foreach (var pack in clusters.Layout.Packs)
+            {
+                if (pack.IsShader) continue;
+                var candidates = pack.Members.Where(key =>
+                    !roots.Contains(key) && !nodes[key].IsShader
+                    && referrers.TryGetValue(key, out var from) && from.Count > 0
+                    && from.All(r => clusters.PackOf.TryGetValue(r, out var p) && p == pack)).ToList();
+                // 팩에 명시 애셋이 하나는 있어야 번들이 만들어짐
+                if (candidates.Count < pack.Members.Count) selected.UnionWith(candidates);
+            }
+            return selected;
+        }
+
+        private static void WriteContentTypes(BuildTarget target, ContentsBuildResult result)
+        {
+            var types = ContentTypes.Collect(result.Clusters.Layout.Packs.SelectMany(p => p.Members).Select(AssetDatabase.GUIDToAssetPath));
+            var missing = ContentTypes.MissingFromPlayer(target, types);
+            if (missing.Count > 0)
+                result.Warnings.Add($"마지막으로 빌드한 앱에 없는 타입 {missing.Count}개가 콘텐츠에 들어갔습니다: {string.Join(", ", missing.Take(10))}{(missing.Count > 10 ? " 외" : "")}. " +
+                                    "이 콘텐츠를 패치로만 내보내면 기존 앱은 해당 컴포넌트를 로드하지 못합니다. 앱 업데이트와 함께 내보내세요.");
+            ContentTypes.Write(target, types);
+        }
+
+        // Built-in이던 경로가 Download가 되면 이 빌드의 앱에는 안 들어감. 동기 Load가 받기 전에 불리면 실패함
+        private static void WarnDeliveryChanges(PackLayout previous, ContentsBuildResult result, List<ContentsEntry> entries, Dictionary<ContentsEntry, string> guidOf)
+        {
+            if (previous == null) return;
+            var wasBuiltIn = new HashSet<string>(previous.Packs.Where(p => p.Delivery == ContentDelivery.BuiltIn).SelectMany(p => p.Members));
+            var moved = entries
+                .Where(e => wasBuiltIn.Contains(guidOf[e]) && result.Clusters.PackOf[guidOf[e]].Delivery == ContentDelivery.Download)
+                .Select(e => e.Path).Distinct().OrderBy(p => p, StringComparer.Ordinal).ToList();
+            if (moved.Count == 0) return;
+            result.Warnings.Add($"Built-in에서 Download로 바뀐 경로 {moved.Count}개: {string.Join(", ", moved.Take(10))}{(moved.Count > 10 ? " 외" : "")}. " +
+                                "이 빌드의 앱에는 들어가지 않으니 동기 Content.Load로 부르는 코드는 Download나 LoadAsync 뒤로 옮기세요. " +
+                                "이미 설치된 앱은 내용이 같은 내장 팩을 그대로 씁니다.");
+        }
+
         // 중첩 프리팹은 빌드 때 바깥 프리팹 안으로 펼쳐짐. 독립 루트이기도 하면 계층이 두 번 들어가고 팩 분리로 못 막음
-        static void WarnNestedRootPrefabs(List<ContentsEntry> entries, Dictionary<ContentsEntry, string> guidOf, ContentsBuildResult result)
+        private static void WarnNestedRootPrefabs(List<ContentsEntry> entries, Dictionary<ContentsEntry, string> guidOf, ContentsBuildResult result)
         {
             var rootPrefabs = entries
                 .Where(e => e.AssetPath.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))

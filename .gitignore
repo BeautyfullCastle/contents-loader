@@ -12,3 +12,9 @@ TestProject/.idea/
 TestResults/
 TestProject/Builds/
 TestProject/.utmp/
+# 쇼케이스 셋업 메뉴가 생성함. 대용량 텍스처와 음악이라 저장소에 넣지 않음
+TestProject/Assets/Showcase/Generated/
+TestProject/Assets/Showcase/Generated.meta
+
+TestProject/Assets/**/.idea/
+*.DotSettings.user

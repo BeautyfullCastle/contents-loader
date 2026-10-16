@@ -2,13 +2,14 @@ using System;
 using System.Collections;
 using H.ContentsLoader;
 using UnityEngine;
+using Object = System.Object;
 
 // 기기 검증용. 로그를 [DeviceCheck] 접두사로 남기고 run-device-check.ps1이 logcat에서 읽음
 public sealed class DeviceCheck : MonoBehaviour
 {
-    sealed class LogProgress : IProgress<float>
+    private sealed class LogProgress : IProgress<float>
     {
-        int lastDecile = -1;
+        private int lastDecile = -1;
 
         public void Report(float value)
         {
@@ -19,7 +20,7 @@ public sealed class DeviceCheck : MonoBehaviour
         }
     }
 
-    IEnumerator Start()
+    private IEnumerator Start()
     {
         Debug.Log($"[DeviceCheck] start persistentDataPath={Application.persistentDataPath}");
         var cannon = Content.Load<GameObject>("Towers/Cannon");
@@ -36,7 +37,9 @@ public sealed class DeviceCheck : MonoBehaviour
 
         var dragon = Content.Load<GameObject>("Bosses/Dragon");
         Debug.Log($"[DeviceCheck] dragon {(dragon != null ? "ok" : "FAIL")}");
+        if(dragon != null)
+            Instantiate(dragon);
     }
 
-    void OnApplicationPause(bool paused) => Debug.Log($"[DeviceCheck] paused={paused}");
+    private void OnApplicationPause(bool paused) => Debug.Log($"[DeviceCheck] paused={paused}");
 }

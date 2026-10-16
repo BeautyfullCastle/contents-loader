@@ -6,11 +6,17 @@ using UnityEngine.TestTools;
 
 namespace H.ContentsLoader.Integration.Tests
 {
-    // 기본 설정(PlayModeSource = AssetDatabase)의 에디터 백엔드를 그대로 씀
+    // 프로젝트의 PlayModeSource 설정과 무관하게 AssetDatabase 백엔드로 검증함
     public class AssetDatabaseModeTests
     {
         [SetUp]
-        public void SetUp() => ContentSystem.Shutdown();
+        public void SetUp()
+        {
+            ContentSystem.Shutdown();
+#if UNITY_EDITOR
+            ContentSystem.Initialize(new H.ContentsLoader.Editor.AssetDatabaseBackend(long.MaxValue));
+#endif
+        }
 
         [TearDown]
         public void TearDown() => ContentSystem.Shutdown();

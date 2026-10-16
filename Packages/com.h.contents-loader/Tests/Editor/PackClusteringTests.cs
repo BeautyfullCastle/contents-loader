@@ -6,9 +6,9 @@ namespace H.ContentsLoader.Editor.Tests
 {
     public class PackClusteringTests
     {
-        readonly Dictionary<string, ClusterNode> nodes = new();
-        readonly List<ClusterRoot> roots = new();
-        readonly ClusterOptions noMerge = new() { SmallPackThreshold = 0 };
+        private readonly Dictionary<string, ClusterNode> nodes = new();
+        private readonly List<ClusterRoot> roots = new();
+        private readonly ClusterOptions noMerge = new() { SmallPackThreshold = 0 };
 
         [SetUp]
         public void SetUp()
@@ -17,7 +17,7 @@ namespace H.ContentsLoader.Editor.Tests
             roots.Clear();
         }
 
-        ClusterNode Node(string key, long size = 100, bool shader = false, params string[] dependencies)
+        private ClusterNode Node(string key, long size = 100, bool shader = false, params string[] dependencies)
         {
             var node = new ClusterNode { Key = key, Size = size, IsShader = shader };
             node.Dependencies.AddRange(dependencies);
@@ -25,20 +25,20 @@ namespace H.ContentsLoader.Editor.Tests
             return node;
         }
 
-        void Root(string key, ContentDelivery delivery = ContentDelivery.BuiltIn, string group = null, params string[] dependencies)
+        private void Root(string key, ContentDelivery delivery = ContentDelivery.BuiltIn, string group = null, params string[] dependencies)
         {
             Node(key, 100, false, dependencies);
             roots.Add(new ClusterRoot { Key = key, Delivery = delivery, Group = group ?? key });
         }
 
-        ClusterResult Run(ClusterOptions options = null, PackLayout previous = null)
+        private ClusterResult Run(ClusterOptions options = null, PackLayout previous = null)
         {
             var result = PackClustering.Run(roots, nodes, options ?? noMerge, previous);
             AssertInvariants(result);
             return result;
         }
 
-        void AssertInvariants(ClusterResult result)
+        private void AssertInvariants(ClusterResult result)
         {
             var all = result.Layout.Packs.SelectMany(p => p.Members).ToList();
             Assert.That(all, Is.Unique, "모든 애셋은 정확히 한 팩에만 있어야 함");
@@ -51,11 +51,11 @@ namespace H.ContentsLoader.Editor.Tests
                     $"Built-in 팩 {pack.Id}의 {member}가 Download 팩의 {dependency}에 의존함");
         }
 
-        static PackLayout Copy(PackLayout layout)
+        private static PackLayout Copy(PackLayout layout)
         {
             var copy = new PackLayout();
             foreach (var p in layout.Packs)
-                copy.Packs.Add(new PackPlan { Id = p.Id, Delivery = p.Delivery, IsShader = p.IsShader, Members = p.Members.ToList() });
+                copy.Packs.Add(new PackPlan { Id = p.Id, Delivery = p.Delivery, IsShader = p.IsShader, Members = p.Members.ToList(), Merged = p.Merged.ToList() });
             return copy;
         }
 
@@ -98,7 +98,7 @@ namespace H.ContentsLoader.Editor.Tests
             Assert.That(result.RequiredPacks["C"], Has.Count.EqualTo(1));
         }
 
-        bool Reaches(string from, string to)
+        private bool Reaches(string from, string to)
         {
             var stack = new Stack<string>(new[] { from });
             var seen = new HashSet<string>();
@@ -308,6 +308,81 @@ namespace H.ContentsLoader.Editor.Tests
             Assert.That(after.PackOf["tex/shared"].Id, Is.EqualTo(before.PackOf["tex/shared"].Id));
             Assert.That(after.PackOf["tex/shared"].Members, Is.EqualTo(before.PackOf["tex/shared"].Members));
             Assert.That(after.PackOf["Archer"], Is.SameAs(after.PackOf["Cannon"]));
+        }
+
+        // B가 tex/x를 더는 안 써도 x는 {A,B} 팩에 남음. B가 그 팩을 열 때마다 x까지 올라오는 낭비가 생김
+        [Test]
+        public void ReusedPackKeepsSmallDrift()
+        {
+            Node("tex/shared", 1000);
+            Node("tex/x", 100);
+            Root("A", dependencies: new[] { "tex/shared", "tex/x" });
+            Root("B", dependencies: new[] { "tex/shared", "tex/x" });
+            var before = Run();
+
+            nodes["B"].Dependencies.Remove("tex/x");
+            var after = Run(previous: Copy(before.Layout));
+
+            Assert.That(after.PackOf["tex/x"], Is.SameAs(after.PackOf["tex/shared"]), "낭비가 작으면 패치 크기를 위해 그대로 둠");
+            Assert.That(after.PackOf["tex/shared"].Repacked, Is.False);
+            Assert.That(after.PackOf["tex/shared"].WasteBytes, Is.EqualTo(100), "B가 안 쓰는 x 100 바이트");
+        }
+
+        [Test]
+        public void ReusedPackSplitsWhenDriftWastesTooMuch()
+        {
+            Node("tex/shared", 1000);
+            Node("tex/x", 2000);
+            Root("A", dependencies: new[] { "tex/shared", "tex/x" });
+            Root("B", dependencies: new[] { "tex/shared", "tex/x" });
+            var before = Run();
+            var oldId = before.PackOf["tex/shared"].Id;
+
+            nodes["B"].Dependencies.Remove("tex/x");
+            var after = Run(previous: Copy(before.Layout));
+
+            // 낭비 2000 / (사용 루트 2 x 팩 3000) = 33% > 25%
+            Assert.That(after.PackOf["tex/x"], Is.Not.SameAs(after.PackOf["tex/shared"]));
+            Assert.That(after.PackOf["tex/x"].Id, Is.EqualTo(oldId), "바이트가 많은 쪽이 원래 팩 ID를 유지함");
+            Assert.That(after.PackOf["tex/x"].Repacked, Is.True);
+            Assert.That(after.Layout.Packs.Sum(p => p.WasteBytes), Is.EqualTo(0));
+        }
+
+        // 병합은 일부러 낭비를 감수한 것이라, 다음 빌드에서 드리프트로 보고 다시 쪼개면 안 됨
+        [Test]
+        public void IntentionallyMergedPacksStayOnRebuild()
+        {
+            Node("tex/shared", 1000);
+            Node("tex/ab", 1000);
+            Node("tex/a", 10);
+            Root("A", dependencies: new[] { "tex/a", "tex/shared", "tex/ab" });
+            Root("B", dependencies: new[] { "tex/shared", "tex/ab" });
+            Root("C", dependencies: new[] { "tex/shared" });
+            var options = new ClusterOptions { SmallPackThreshold = 500, MaxReuseWaste = 0.01f };
+            var before = Run(options);
+            Assert.That(before.PackOf["tex/a"], Is.SameAs(before.PackOf["tex/ab"]), "전제: {A} 팩이 {A,B} 팩에 병합됨");
+
+            var after = Run(options, Copy(before.Layout));
+
+            Assert.That(after.Layout.Packs.Select(p => p.Id + ":" + string.Join(",", p.Members)),
+                Is.EqualTo(before.Layout.Packs.Select(p => p.Id + ":" + string.Join(",", p.Members))));
+            Assert.That(after.Layout.Packs.Any(p => p.Repacked), Is.False);
+        }
+
+        [Test]
+        public void PackIdDoesNotDependOnDelivery()
+        {
+            Node("tex/boss");
+            Root("Boss", ContentDelivery.Download, dependencies: new[] { "tex/boss" });
+            var remote = Run();
+
+            roots.Clear();
+            Root("Boss", ContentDelivery.BuiltIn, dependencies: new[] { "tex/boss" });
+            var builtIn = Run();
+
+            // 내용이 같으면 파일 이름이 같아서, Delivery만 바꾼 패치는 다시 받지 않음
+            Assert.That(builtIn.PackOf["tex/boss"].Id, Is.EqualTo(remote.PackOf["tex/boss"].Id));
+            Assert.That(builtIn.PackOf["tex/boss"].Delivery, Is.EqualTo(ContentDelivery.BuiltIn));
         }
     }
 }

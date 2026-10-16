@@ -5,7 +5,7 @@ namespace H.ContentsLoader.Editor.Tests
 {
     public class ContentCatalogTests
     {
-        static ContentCatalog Sample()
+        private static ContentCatalog Sample()
         {
             var catalog = new ContentCatalog
             {

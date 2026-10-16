@@ -15,12 +15,18 @@ MonoBehaviour:
   folderRules:
   - Guid: 091adf65361265440b7a61dfe845270f
     Delivery: 1
+  - Guid: 7537980667d5c484b822b240d3886491
+    Delivery: 1
+  DefaultDelivery: 0
   RemoteUrl: https://cdn.invalid/contents/{Platform}
   MemoryBudgetMB: 0
   SmallPackThresholdKB: 64
   SignatureByFolder: 0
   IgnorePreviousLayout: 0
-  PlayModeSource: 0
+  RepackWastePercent: 25
+  PlayModeSource: 1
+  EditorDownloadSource: 0
+  EditorDownloadSpeedKBps: 6144
   BuildWithPlayer: 1
   GeneratePathConstants: 0
   PathConstantsFile: Assets/ContentsLoader.Generated/ContentPaths.cs

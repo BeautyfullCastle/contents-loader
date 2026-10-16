@@ -10,10 +10,10 @@ namespace H.ContentsLoader.Integration.Tests
     // 이어받기 테스트용 로컬 HTTP 서버. 첫 응답을 중간에 끊어서 앱 종료를 흉내낼 수 있음
     internal sealed class RangeServer : IDisposable
     {
-        readonly HttpListener listener = new();
-        readonly string root;
-        readonly List<string> ranges = new();
-        long cutAfterBytes;
+        private readonly HttpListener listener = new();
+        private readonly string root;
+        private readonly List<string> ranges = new();
+        private long cutAfterBytes;
 
         public RangeServer(string root, long cutFirstResponseAfterBytes = -1, bool ignoreRange = false)
         {
@@ -43,7 +43,7 @@ namespace H.ContentsLoader.Integration.Tests
             }
         }
 
-        void Serve()
+        private void Serve()
         {
             while (listener.IsListening)
             {
@@ -60,7 +60,7 @@ namespace H.ContentsLoader.Integration.Tests
             }
         }
 
-        void Respond(HttpListenerContext context)
+        private void Respond(HttpListenerContext context)
         {
             var path = Path.Combine(root, Path.GetFileName(context.Request.Url.AbsolutePath));
             var range = context.Request.Headers["Range"];

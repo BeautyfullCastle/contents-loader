@@ -8,23 +8,27 @@ namespace H.ContentsLoader.Tests
 {
     internal sealed class FakeBackend : IContentBackend
     {
-        sealed class Lease : IContentLease
+        private sealed class Lease : IContentLease
         {
-            readonly FakeBackend owner;
-            readonly string path;
+            private readonly FakeBackend owner;
+            private readonly string path;
 
             public Lease(FakeBackend owner, string path, Object asset)
             {
                 this.owner = owner;
                 this.path = path;
                 Asset = asset;
+                Size = owner.SizePerAsset;
+                owner.LoadedBytes += Size;
             }
 
             public Object Asset { get; private set; }
+            public long Size { get; }
 
             public void Release()
             {
                 if (Asset == null) return;
+                owner.LoadedBytes -= Size;
                 owner.Released.Add(path);
                 Object.Destroy(Asset);
                 Asset = null;
@@ -38,6 +42,8 @@ namespace H.ContentsLoader.Tests
         public int Loads;
 
         public long MemoryBudget { get; set; } = long.MaxValue;
+        public long LoadedBytes { get; private set; }
+        public long SizePerAsset;
 
         public ContentStatus GetStatus(string path, Type type)
         {

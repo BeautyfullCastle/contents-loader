@@ -14,10 +14,10 @@ namespace H.ContentsLoader.Integration.Tests
     [PrebuildSetup("H.ContentsLoader.Integration.Editor.ContentsBuildSetup")]
     public class ResumeDownloadTests
     {
-        string buildRoot;
-        string cacheRoot;
-        RangeServer server;
-        AssetBundleBackend backend;
+        private string buildRoot;
+        private string cacheRoot;
+        private RangeServer server;
+        private AssetBundleBackend backend;
 
         [SetUp]
         public void SetUp()
@@ -35,7 +35,7 @@ namespace H.ContentsLoader.Integration.Tests
         }
 
         // 같은 캐시 폴더로 앱을 다시 켠 상황
-        void Start()
+        private void Start()
         {
             ContentSystem.Shutdown();
             backend = new AssetBundleBackend(new AssetBundleBackendOptions
@@ -47,12 +47,12 @@ namespace H.ContentsLoader.Integration.Tests
             ContentSystem.Initialize(backend);
         }
 
-        static IEnumerator Settle(Task task)
+        private static IEnumerator Settle(Task task)
         {
             yield return new WaitUntil(() => task.IsCompleted);
         }
 
-        string PartialFile() => Directory.GetFiles(Path.Combine(cacheRoot, "packs"), "*.download").Single();
+        private string PartialFile() => Directory.GetFiles(Path.Combine(cacheRoot, "packs"), "*.download").Single();
 
         [UnityTest]
         public IEnumerator InterruptedDownloadResumesFromReceivedBytes()

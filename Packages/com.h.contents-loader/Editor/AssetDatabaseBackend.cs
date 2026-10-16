@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEditor;
+using UnityEngine.Profiling;
 using Object = UnityEngine.Object;
 
 namespace H.ContentsLoader.Editor
@@ -9,15 +10,41 @@ namespace H.ContentsLoader.Editor
     // 빌드 없이 AssetDatabase에서 바로 읽음. Delivery와 무관하게 전부 Ready로 봄
     internal sealed class AssetDatabaseBackend : IContentBackend
     {
-        sealed class Lease : IContentLease
+        private sealed class Lease : IContentLease
         {
-            public Lease(Object asset) => Asset = asset;
+            private readonly AssetDatabaseBackend owner;
+            private readonly int[] objects;
+
+            public Lease(AssetDatabaseBackend owner, Object asset)
+            {
+                this.owner = owner;
+                Asset = asset;
+                if (asset == null)
+                {
+                    objects = Array.Empty<int>();
+                    return;
+                }
+                objects = owner.Retain(asset, out var size);
+                Size = size;
+            }
+
             public Object Asset { get; private set; }
-            public void Release() => Asset = null;
+            public long Size { get; }
+
+            public void Release()
+            {
+                if (Asset == null) return;
+                Asset = null;
+                owner.ReleaseObjects(objects);
+            }
         }
 
-        static bool mapDirty = true;
-        static readonly Dictionary<string, List<string>> AssetPaths = new(StringComparer.OrdinalIgnoreCase);
+        // 애셋이 끌고 오는 오브젝트(텍스처, 메시 등)를 인스턴스 ID로 세서 공유 오브젝트는 한 번만 셈
+        private readonly Dictionary<int, (int Count, long Size)> objectRefs = new();
+        private long loadedBytes;
+
+        private static bool mapDirty = true;
+        private static readonly Dictionary<string, List<string>> AssetPaths = new(StringComparer.OrdinalIgnoreCase);
 
         public AssetDatabaseBackend(long memoryBudget)
         {
@@ -25,10 +52,11 @@ namespace H.ContentsLoader.Editor
         }
 
         public long MemoryBudget { get; }
+        public long LoadedBytes => loadedBytes;
 
         internal static void MarkDirty() => mapDirty = true;
 
-        static Dictionary<string, List<string>> Map
+        private static Dictionary<string, List<string>> Map
         {
             get
             {
@@ -56,9 +84,9 @@ namespace H.ContentsLoader.Editor
             foreach (var assetPath in assetPaths)
             {
                 var asset = AssetDatabase.LoadAssetAtPath(assetPath, type);
-                if (asset != null) return new Lease(asset);
+                if (asset != null) return new Lease(this, asset);
             }
-            return new Lease(null);
+            return new Lease(this, null);
         }
 
         public Task<IContentLease> LoadAsync(string path, Type type) => Task.FromResult(Load(path, type));
@@ -73,12 +101,56 @@ namespace H.ContentsLoader.Editor
 
         public Task<bool> UpdateCatalog() => Task.FromResult(false);
 
-        public void Dispose() { }
+        public void Dispose()
+        {
+            objectRefs.Clear();
+            loadedBytes = 0;
+        }
+
+        private int[] Retain(Object asset, out long size)
+        {
+            size = 0;
+            var ids = new List<int>();
+            foreach (var dependency in EditorUtility.CollectDependencies(new[] { asset }))
+            {
+                if (dependency == null || dependency is MonoScript) continue;
+                var id = dependency.GetInstanceID();
+                if (objectRefs.TryGetValue(id, out var entry))
+                {
+                    objectRefs[id] = (entry.Count + 1, entry.Size);
+                    size += entry.Size;
+                }
+                else
+                {
+                    var bytes = Profiler.GetRuntimeMemorySizeLong(dependency);
+                    objectRefs.Add(id, (1, bytes));
+                    loadedBytes += bytes;
+                    size += bytes;
+                }
+                ids.Add(id);
+            }
+            return ids.ToArray();
+        }
+
+        private void ReleaseObjects(int[] ids)
+        {
+            foreach (var id in ids)
+            {
+                if (!objectRefs.TryGetValue(id, out var entry)) continue;
+                if (entry.Count > 1)
+                {
+                    objectRefs[id] = (entry.Count - 1, entry.Size);
+                    continue;
+                }
+                objectRefs.Remove(id);
+                loadedBytes -= entry.Size;
+            }
+        }
     }
 
-    sealed class ContentsAssetWatcher : AssetPostprocessor
+    internal sealed class ContentsAssetWatcher : AssetPostprocessor
     {
-        static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
+        private static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
         {
             AssetDatabaseBackend.MarkDirty();
         }

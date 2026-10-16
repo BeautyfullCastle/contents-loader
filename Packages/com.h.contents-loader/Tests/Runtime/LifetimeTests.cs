@@ -9,8 +9,8 @@ namespace H.ContentsLoader.Tests
 {
     public class LifetimeTests
     {
-        FakeBackend backend;
-        ContentLifetime lifetime;
+        private FakeBackend backend;
+        private ContentLifetime lifetime;
 
         [SetUp]
         public void SetUp()
@@ -25,24 +25,24 @@ namespace H.ContentsLoader.Tests
         [TearDown]
         public void TearDown() => ContentSystem.Shutdown();
 
-        static Scene CreateScene(string name) => SceneManager.CreateScene($"{name}-{System.Guid.NewGuid():N}");
+        private static Scene CreateScene(string name) => SceneManager.CreateScene($"{name}-{System.Guid.NewGuid():N}");
 
-        static IEnumerator Unload(Scene scene)
+        private static IEnumerator Unload(Scene scene)
         {
             var operation = SceneManager.UnloadSceneAsync(scene);
             while (!operation.isDone) yield return null;
         }
 
-        ContentState? StateOf(string path) => lifetime.Find(path, typeof(ScriptableObject))?.State;
+        private ContentState? StateOf(string path) => lifetime.Find(path, typeof(ScriptableObject))?.State;
 
-        Object Load(string path, Scene scene) => lifetime.Load(path, typeof(ScriptableObject), ContentOwner.Of(scene));
+        private Object Load(string path, Scene scene) => lifetime.Load(path, typeof(ScriptableObject), ContentOwner.Of(scene));
 
         [UnityTest]
         public IEnumerator SceneAssetIsCachedOnUnloadThenReleasedNextFrame()
         {
             var a = CreateScene("A");
             Load("A/Only", a);
-            Assert.That(StateOf("A/Only"), Is.EqualTo(ContentState.Owned));
+            Assert.That(StateOf("A/Only"), Is.EqualTo(ContentState.Loaded));
 
             yield return Unload(a);
             Assert.That(StateOf("A/Only"), Is.EqualTo(ContentState.Cached).Or.Null);
@@ -68,8 +68,8 @@ namespace H.ContentsLoader.Tests
             yield return null;
 
             Assert.That(StateOf("A/Only"), Is.Null);
-            Assert.That(StateOf("B/Only"), Is.EqualTo(ContentState.Owned));
-            Assert.That(StateOf("Shared"), Is.EqualTo(ContentState.Owned));
+            Assert.That(StateOf("B/Only"), Is.EqualTo(ContentState.Loaded));
+            Assert.That(StateOf("Shared"), Is.EqualTo(ContentState.Loaded));
             yield return Unload(b);
         }
 
@@ -84,7 +84,7 @@ namespace H.ContentsLoader.Tests
             yield return null;
             yield return null;
 
-            Assert.That(StateOf("Global"), Is.EqualTo(ContentState.Owned));
+            Assert.That(StateOf("Global"), Is.EqualTo(ContentState.Loaded));
         }
 
         [UnityTest]
@@ -103,7 +103,7 @@ namespace H.ContentsLoader.Tests
 
             Assert.That(second, Is.SameAs(first));
             Assert.That(backend.Loads, Is.EqualTo(1));
-            Assert.That(StateOf("Shared"), Is.EqualTo(ContentState.Owned));
+            Assert.That(StateOf("Shared"), Is.EqualTo(ContentState.Loaded));
             yield return Unload(a);
             yield return Unload(b);
         }
@@ -113,7 +113,7 @@ namespace H.ContentsLoader.Tests
         {
             var frame = 0;
             lifetime.Frame = () => frame;
-            lifetime.SizeOf = _ => 100;
+            backend.SizePerAsset = 100;
             lifetime.MemoryBudget = 250;
             var a = CreateScene("A");
             var keep = CreateScene("Keep");
@@ -121,27 +121,27 @@ namespace H.ContentsLoader.Tests
             frame = 1; Load("Big1", a);
             frame = 2; Load("Big2", a);
             frame = 3; Load("Big3", keep);
-            Assert.That(StateOf("Big1"), Is.EqualTo(ContentState.Owned), "Owned 애셋은 예산을 넘어도 유지함");
+            Assert.That(StateOf("Big1"), Is.EqualTo(ContentState.Loaded), "Loaded 애셋은 예산을 넘어도 유지함");
 
             lifetime.OnSceneUnloaded(a);
 
             Assert.That(StateOf("Big1"), Is.Null);
             Assert.That(StateOf("Big2"), Is.EqualTo(ContentState.Cached));
-            Assert.That(StateOf("Big3"), Is.EqualTo(ContentState.Owned));
+            Assert.That(StateOf("Big3"), Is.EqualTo(ContentState.Loaded));
             SceneManager.UnloadSceneAsync(a);
             SceneManager.UnloadSceneAsync(keep);
         }
 
         [Test]
-        public void BudgetNeverEvictsOwnedAssets()
+        public void BudgetNeverEvictsLoadedAssets()
         {
-            lifetime.SizeOf = _ => 100;
+            backend.SizePerAsset = 100;
             lifetime.MemoryBudget = 50;
 
             Content.Load<ScriptableObject>("Big1", ContentLife.App);
             lifetime.Tick();
 
-            Assert.That(StateOf("Big1"), Is.EqualTo(ContentState.Owned));
+            Assert.That(StateOf("Big1"), Is.EqualTo(ContentState.Loaded));
         }
 
         [Test]
@@ -221,6 +221,25 @@ namespace H.ContentsLoader.Tests
             Assert.That(record.App, Is.True);
             Assert.That(record.Scenes, Is.Empty);
             Object.Destroy(go);
+        }
+
+        [UnityTest]
+        public IEnumerator UnloadCachedReleasesOnlyCachedAssets()
+        {
+            var a = CreateScene("A");
+            var b = CreateScene("B");
+            Load("A/Only", a);
+            Load("B/Only", b);
+            // 다음 프레임 정리 전에 확인하려고 씬 언로드 이벤트를 직접 보냄
+            lifetime.OnSceneUnloaded(a);
+            Assert.That(StateOf("A/Only"), Is.EqualTo(ContentState.Cached));
+
+            Assert.That(lifetime.UnloadCached(), Is.EqualTo(1));
+            Assert.That(StateOf("A/Only"), Is.Null);
+            Assert.That(backend.Released, Does.Contain("A/Only"));
+            Assert.That(StateOf("B/Only"), Is.EqualTo(ContentState.Loaded));
+            yield return Unload(a);
+            yield return Unload(b);
         }
     }
 }

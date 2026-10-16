@@ -2,6 +2,7 @@
     "name": "ContentsLoader.Integration.Tests",
     "references": [
         "H.ContentsLoader",
+        "H.ContentsLoader.Editor",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

@@ -7,9 +7,9 @@ namespace H.ContentsLoader.Editor.Tests
 {
     public class DeliveryTests
     {
-        const string Root = "Assets/Game/Contents";
+        private const string Root = "Assets/Game/Contents";
 
-        static ContentDelivery Resolve(string assetPath, Dictionary<string, ContentDelivery> rules)
+        private static ContentDelivery Resolve(string assetPath, Dictionary<string, ContentDelivery> rules)
         {
             return DeliveryResolver.Resolve(assetPath, Root,
                 folder => rules.TryGetValue(folder, out var d) ? d : (ContentDelivery?)null);
@@ -19,6 +19,17 @@ namespace H.ContentsLoader.Editor.Tests
         public void DefaultsToBuiltIn()
         {
             Assert.That(Resolve($"{Root}/Towers/Cannon.prefab", new()), Is.EqualTo(ContentDelivery.BuiltIn));
+        }
+
+        [Test]
+        public void ProjectDefaultAppliesWhereNoFolderRuleExists()
+        {
+            var rules = new Dictionary<string, ContentDelivery> { [$"{Root}/Core"] = ContentDelivery.BuiltIn };
+            ContentDelivery Remote(string path) => DeliveryResolver.Resolve(path, Root,
+                folder => rules.TryGetValue(folder, out var d) ? d : (ContentDelivery?)null, ContentDelivery.Download);
+
+            Assert.That(Remote($"{Root}/Towers/Cannon.prefab"), Is.EqualTo(ContentDelivery.Download));
+            Assert.That(Remote($"{Root}/Core/Ui.prefab"), Is.EqualTo(ContentDelivery.BuiltIn), "폴더 규칙이 프로젝트 기본값보다 우선함");
         }
 
         [Test]

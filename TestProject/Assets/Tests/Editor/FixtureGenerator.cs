@@ -9,12 +9,12 @@ namespace H.ContentsLoader.Integration.Editor
     // 통합 테스트용 애셋을 다시 만듦. 결과물은 커밋해서 씀
     public static class FixtureGenerator
     {
-        const string Art = "Assets/Art";
-        const string Game = "Assets/Game/Contents";
-        const string Dlc = "Assets/DLC/Contents";
-        const string Scenes = "Assets/Tests/Scenes";
+        private const string Art = "Assets/Art";
+        private const string Game = "Assets/Game/Contents";
+        private const string Dlc = "Assets/DLC/Contents";
+        private const string Scenes = "Assets/Tests/Scenes";
 
-        const string SimpleShader = @"Shader ""ContentsLoader/Simple""
+        private const string SimpleShader = @"Shader ""ContentsLoader/Simple""
 {
     Properties { _MainTex (""Texture"", 2D) = ""white"" {} }
     SubShader
@@ -33,7 +33,7 @@ namespace H.ContentsLoader.Integration.Editor
         }
     }
 }
-";
+private ";
 
         [MenuItem("Tools/Contents Loader/Regenerate Test Fixtures")]
         public static void Generate()
@@ -80,7 +80,7 @@ namespace H.ContentsLoader.Integration.Editor
             AssetDatabase.SaveAssets();
         }
 
-        static void CreateFolders(params string[] paths)
+        private static void CreateFolders(params string[] paths)
         {
             foreach (var path in paths)
             {
@@ -93,7 +93,7 @@ namespace H.ContentsLoader.Integration.Editor
             }
         }
 
-        static void Texture(string name, int size, int seed, string folder = Art)
+        private static void Texture(string name, int size, int seed, string folder = Art)
         {
             var random = new System.Random(seed);
             var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
@@ -105,14 +105,14 @@ namespace H.ContentsLoader.Integration.Editor
             Object.DestroyImmediate(texture);
         }
 
-        static Material Material(string name, Shader shader)
+        private static Material Material(string name, Shader shader)
         {
             var material = new Material(shader) { mainTexture = AssetDatabase.LoadAssetAtPath<Texture2D>($"{Art}/{name}.png") };
             AssetDatabase.CreateAsset(material, $"{Art}/{name}.mat");
             return material;
         }
 
-        static void Prefab(string path, params Material[] materials)
+        private static void Prefab(string path, params Material[] materials)
         {
             var root = new GameObject(Path.GetFileNameWithoutExtension(path));
             foreach (var material in materials)

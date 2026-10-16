@@ -34,12 +34,12 @@ namespace H.ContentsLoader.Integration.Editor
 
     public class BuildVerificationTests
     {
-        ContentsBuildResult result;
+        private ContentsBuildResult result;
 
         [OneTimeSetUp]
         public void Build() => result = FixtureBuild.Run(smallPackThresholdKB: 0);
 
-        PackPlan PackOf(string assetPath) => result.Clusters.PackOf[FixtureBuild.Guid(assetPath)];
+        private PackPlan PackOf(string assetPath) => result.Clusters.PackOf[FixtureBuild.Guid(assetPath)];
 
         [Test]
         public void CatalogListsEveryContentPath()
@@ -48,7 +48,8 @@ namespace H.ContentsLoader.Integration.Editor
 
             foreach (var path in new[] { "Towers/Cannon", "Towers/Archer", "UI/Shop", "Data/Config", "Bosses/Dragon", "Season01/Goblin" })
                 Assert.That(catalog.TryFindEntry(path, null, out _), path);
-            Assert.That(catalog.Entries, Has.Length.EqualTo(7));
+            // 쇼케이스 콘텐츠는 빼고 테스트 픽스처만 셈
+            Assert.That(catalog.Entries.Count(e => !e.AssetName.StartsWith("Assets/Showcase/")), Is.EqualTo(7));
             Assert.That(catalog.FindEntries("Towers/Cannon").Count(), Is.EqualTo(2));
             Assert.That(catalog.TryFindEntry("Towers/Cannon", typeof(Texture2D), out var texture));
             Assert.That(texture.AssetName, Is.EqualTo("Assets/Game/Contents/Towers/Cannon.png"));
@@ -76,14 +77,20 @@ namespace H.ContentsLoader.Integration.Editor
                     }
                 }
 
-                // 명시 배정 안 된 의존 애셋만 Unity가 참조하는 번들마다 복제함
-                foreach (var name in owner.Keys.ToList())
-                foreach (var dependency in AssetDatabase.GetDependencies(name, true))
+                // 명시 배정 안 된 의존 애셋은 Unity가 참조하는 번들마다 복제함
+                // 그래서 배정을 뺀 애셋(ImplicitMembers)은 같은 팩 안에서만 참조돼야 함
+                foreach (var pack in result.Clusters.Layout.Packs)
+                foreach (var member in pack.Members.Select(AssetDatabase.GUIDToAssetPath))
+                foreach (var dependency in AssetDatabase.GetDependencies(member, false))
                 {
-                    if (dependency.EndsWith(".cs")) continue;
-                    Assert.That(owner.ContainsKey(dependency.ToLowerInvariant()), $"{name}의 의존 애셋 {dependency}가 어느 번들에도 명시되지 않음");
+                    if (dependency == member || dependency.EndsWith(".cs")) continue;
+                    var guid = FixtureBuild.Guid(dependency);
+                    if (owner.ContainsKey(dependency.ToLowerInvariant())) continue;
+                    Assert.That(result.ImplicitMembers, Does.Contain(guid), $"{member}의 의존 애셋 {dependency}가 배정되지 않았는데 오브젝트 단위 포함 대상도 아님");
+                    Assert.That(result.Clusters.PackOf[guid], Is.SameAs(pack), $"{dependency}는 다른 팩 {pack.Id}에서 참조돼 복제됨");
                 }
-                Assert.That(owner.Keys, Does.Contain("assets/art/shared.png"));
+                // Shared.png는 Shared.mat만 참조하고 둘은 같은 팩이라 오브젝트 단위로 들어감
+                Assert.That(result.ImplicitMembers, Does.Contain(FixtureBuild.Guid("Assets/Art/Shared.png")));
             }
             finally
             {
@@ -139,6 +146,22 @@ namespace H.ContentsLoader.Integration.Editor
             var remote = new FileInfo($"{result.RemoteDirectory}/{dragon}").Length;
 
             Assert.That(remote, Is.LessThan(lz4));
+        }
+    }
+
+    public class ContentTypeTests
+    {
+        // 픽스처 프리팹의 BoxCollider는 테스트 씬 어디에도 없음. link.xml에 없으면 플레이어 빌드에서 엔진 코드가 제거됨
+        [Test]
+        public void LinkXmlKeepsTypesUsedOnlyInBundles()
+        {
+            FixtureBuild.Run(smallPackThresholdKB: 64);
+            var xml = File.ReadAllText($"ContentsBuild/{FixtureBuild.Target}/link.xml");
+
+            Assert.That(xml, Does.Contain("<type fullname=\"UnityEngine.BoxCollider\" preserve=\"all\"/>"));
+            Assert.That(xml, Does.Contain("<assembly fullname=\"UnityEngine.PhysicsModule\">"));
+            Assert.That(xml, Does.Contain("UnityEngine.MeshRenderer"));
+            Assert.That(xml, Does.Not.Contain("UnityEditor"));
         }
     }
 

@@ -8,7 +8,7 @@ namespace H.ContentsLoader.Integration.Editor
     public sealed class PatchBuildSetup : IPrebuildSetup
     {
         public const string Root = "Library/ContentsLoaderPatchTest";
-        const string Config = "Assets/Game/Contents/Data/Config.txt";
+        private const string Config = "Assets/Game/Contents/Data/Config.txt";
 
         public void Setup()
         {

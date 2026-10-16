@@ -66,7 +66,7 @@ namespace H.ContentsLoader.Editor
         }
 
         // 기반 타입까지 넣어 두면 런타임은 요청 타입 이름만 찾으면 됨
-        static int[] TypesIn(string assetPath, List<string> typeNames)
+        private static int[] TypesIn(string assetPath, List<string> typeNames)
         {
             var indices = new SortedSet<int>();
             foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(assetPath))

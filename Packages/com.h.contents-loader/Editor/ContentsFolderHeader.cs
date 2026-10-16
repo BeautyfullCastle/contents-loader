@@ -4,12 +4,12 @@ using UnityEngine;
 namespace H.ContentsLoader.Editor
 {
     [InitializeOnLoad]
-    static class ContentsFolderHeader
+    internal static class ContentsFolderHeader
     {
-        static readonly GUIContent Label = new("Delivery", "Built-in packs ship with the app. Download packs are fetched on first use.");
+        private static readonly GUIContent Label = new("Delivery", "Built-in packs ship with the app. Download packs are fetched on first use.");
 
-        static ContentsSettings cached;
-        static bool resolved;
+        private static ContentsSettings cached;
+        private static bool resolved;
 
         static ContentsFolderHeader()
         {
@@ -18,7 +18,7 @@ namespace H.ContentsLoader.Editor
         }
 
         // 헤더는 repaint마다 그려져서 FindAssets를 매번 부르면 느림
-        static ContentsSettings Settings
+        private static ContentsSettings Settings
         {
             get
             {
@@ -29,7 +29,7 @@ namespace H.ContentsLoader.Editor
             }
         }
 
-        static void OnHeaderGUI(UnityEditor.Editor editor)
+        private static void OnHeaderGUI(UnityEditor.Editor editor)
         {
             if (editor.targets.Length != 1) return;
             var folder = AssetDatabase.GetAssetPath(editor.target);
@@ -39,13 +39,15 @@ namespace H.ContentsLoader.Editor
             var settings = Settings;
             var guid = AssetDatabase.AssetPathToGUID(folder);
             var own = settings != null ? settings.GetRule(guid) : null;
+            var projectDefault = settings != null ? settings.DefaultDelivery : ContentDelivery.BuiltIn;
             var inherited = settings != null && folder != root
-                ? DeliveryResolver.Resolve(folder, root, f => settings.GetRule(AssetDatabase.AssetPathToGUID(f)))
-                : ContentDelivery.BuiltIn;
+                ? DeliveryResolver.Resolve(folder, root, f => settings.GetRule(AssetDatabase.AssetPathToGUID(f)), projectDefault)
+                : projectDefault;
+            var source = folder != root && HasRuleAbove(settings, folder, root) ? "parent folder" : "project default";
 
             var options = new[]
             {
-                new GUIContent($"Inherit ({Name(inherited)})"),
+                new GUIContent($"Inherit ({Name(inherited)}, {source})"),
                 new GUIContent(Name(ContentDelivery.BuiltIn)),
                 new GUIContent(Name(ContentDelivery.Download)),
             };
@@ -60,6 +62,20 @@ namespace H.ContentsLoader.Editor
             AssetDatabase.SaveAssetIfDirty(settings);
         }
 
-        static string Name(ContentDelivery delivery) => delivery == ContentDelivery.BuiltIn ? "Built-in" : "Download";
+        private static bool HasRuleAbove(ContentsSettings settings, string folder, string root)
+        {
+            if (settings == null) return false;
+            for (var parent = ParentOf(folder); parent != null && parent.Length >= root.Length; parent = ParentOf(parent))
+                if (settings.GetRule(AssetDatabase.AssetPathToGUID(parent)).HasValue) return true;
+            return false;
+        }
+
+        private static string ParentOf(string path)
+        {
+            var slash = path.LastIndexOf('/');
+            return slash > 0 ? path.Substring(0, slash) : null;
+        }
+
+        private static string Name(ContentDelivery delivery) => delivery == ContentDelivery.BuiltIn ? "Built-in" : "Download";
     }
 }

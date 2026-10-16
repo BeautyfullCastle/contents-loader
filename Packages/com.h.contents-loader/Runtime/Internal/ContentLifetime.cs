@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.Profiling;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
 
@@ -11,14 +10,12 @@ namespace H.ContentsLoader
 {
     internal sealed class ContentLifetime
     {
-        readonly IContentBackend backend;
-        readonly Dictionary<(string, Type), ContentRecord> records = new();
-        int lastSceneEventFrame;
-        bool sweepPending;
-        long loadedSize;
+        private readonly IContentBackend backend;
+        private readonly Dictionary<(string, Type), ContentRecord> records = new();
+        private int lastSceneEventFrame;
+        private bool sweepPending;
 
         public Func<int> Frame = () => Time.frameCount;
-        public Func<Object, long> SizeOf = Profiler.GetRuntimeMemorySizeLong;
         public long MemoryBudget;
         public int BackendLoadCount { get; private set; }
 
@@ -30,6 +27,7 @@ namespace H.ContentsLoader
 
         public IContentBackend Backend => backend;
         public IReadOnlyCollection<ContentRecord> Records => records.Values;
+        public long LoadedSize => backend.LoadedBytes;
 
         public ContentRecord Find(string path, Type type)
         {
@@ -93,7 +91,7 @@ namespace H.ContentsLoader
             return record.Loading;
         }
 
-        async Task<Object> LoadRecordAsync(ContentRecord record)
+        private async Task<Object> LoadRecordAsync(ContentRecord record)
         {
             IContentLease lease;
             try
@@ -123,7 +121,7 @@ namespace H.ContentsLoader
             MarkSceneEvent();
             foreach (var record in records.Values)
             {
-                if (!record.Scenes.Remove(scene) || record.HasOwners || record.State != ContentState.Owned) continue;
+                if (!record.Scenes.Remove(scene) || record.HasOwners || record.State != ContentState.Loaded) continue;
                 record.State = ContentState.Cached;
             }
             EnforceBudget();
@@ -140,26 +138,34 @@ namespace H.ContentsLoader
                 Unload(record);
         }
 
+        // 씬 전환을 기다리지 않고 지금 대기 상태(Cached) 애셋을 해제함. 모니터 창에서 씀
+        public int UnloadCached()
+        {
+            var cached = records.Values.Where(r => r.State == ContentState.Cached).ToList();
+            foreach (var record in cached) Unload(record);
+            return cached.Count;
+        }
+
         public void UnloadAll()
         {
             foreach (var record in records.Values.ToList())
                 Unload(record);
         }
 
-        void MarkSceneEvent()
+        private void MarkSceneEvent()
         {
             lastSceneEventFrame = Frame();
             sweepPending = true;
         }
 
-        ContentRecord Add(string path, Type type)
+        private ContentRecord Add(string path, Type type)
         {
             var record = new ContentRecord { Path = path, Type = type, State = ContentState.Loading };
             records.Add((path, type), record);
             return record;
         }
 
-        void Remove(ContentRecord record)
+        private void Remove(ContentRecord record)
         {
             record.State = ContentState.Unloaded;
             // 해제 후 같은 키로 새 레코드가 생겼을 수 있으니 자기 것만 지움
@@ -167,15 +173,15 @@ namespace H.ContentsLoader
             if (records.TryGetValue(key, out var current) && current == record) records.Remove(key);
         }
 
-        void Claim(ContentRecord record, ContentOwner owner)
+        private void Claim(ContentRecord record, ContentOwner owner)
         {
             if (owner.IsApp) record.App = true;
             else record.Scenes.Add(owner.Scene);
             record.LastUsedFrame = Frame();
-            if (record.State == ContentState.Cached) record.State = ContentState.Owned;
+            if (record.State == ContentState.Cached) record.State = ContentState.Loaded;
         }
 
-        void Attach(ContentRecord record, IContentLease lease)
+        private void Attach(ContentRecord record, IContentLease lease)
         {
             if (record.Lease != null)
             {
@@ -191,27 +197,27 @@ namespace H.ContentsLoader
             }
 
             record.Lease = lease;
-            record.Size = SizeOf(lease.Asset);
-            loadedSize += record.Size;
-            record.State = record.HasOwners ? ContentState.Owned : ContentState.Cached;
+            record.Size = lease.Size;
+            record.State = record.HasOwners ? ContentState.Loaded : ContentState.Cached;
             if (record.State == ContentState.Cached) sweepPending = true;
             EnforceBudget();
         }
 
-        void Unload(ContentRecord record)
+        private void Unload(ContentRecord record)
         {
             if (record.Lease != null)
             {
                 record.Lease.Release();
                 record.Lease = null;
-                loadedSize -= record.Size;
             }
             Remove(record);
         }
 
-        void EnforceBudget()
+        // 애셋 각각의 크기가 아니라 백엔드가 실제로 들고 있는 바이트로 판단함
+        // 공유 팩은 그걸 쓰는 애셋이 모두 내려가야 해제되므로, 줄어들 때까지 오래된 대기 애셋부터 내림
+        private void EnforceBudget()
         {
-            while (loadedSize > MemoryBudget)
+            while (backend.LoadedBytes > MemoryBudget)
             {
                 var oldest = records.Values
                     .Where(r => r.State == ContentState.Cached)
@@ -222,7 +228,7 @@ namespace H.ContentsLoader
             }
         }
 
-        static Object NotDownloaded(string path)
+        private static Object NotDownloaded(string path)
         {
             var message = $"'{path}'은(는) Download 애셋입니다. LoadAsync를 쓰거나 Download()로 미리 받으세요.";
             if (Debug.isDebugBuild) throw new ContentNotDownloadedException(path, message);

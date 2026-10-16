@@ -7,11 +7,11 @@ namespace H.ContentsLoader.Samples
     // Contents 폴더에 Towers/Cannon(Built-in)과 Bosses/Dragon(Download) 프리팹이 있다고 가정함
     public sealed class ContentsLoaderSample : MonoBehaviour
     {
-        [SerializeField] string builtInPath = "Towers/Cannon";
-        [SerializeField] string downloadPath = "Bosses/Dragon";
-        [SerializeField] string downloadFolder = "Bosses";
+        [SerializeField] private string builtInPath = "Towers/Cannon";
+        [SerializeField] private string downloadPath = "Bosses/Dragon";
+        [SerializeField] private string downloadFolder = "Bosses";
 
-        async void Start()
+        private async void Start()
         {
             var tower = this.LoadContent<GameObject>(builtInPath);
             if (tower != null) Instantiate(tower, Vector3.left * 2, Quaternion.identity);

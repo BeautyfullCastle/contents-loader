@@ -9,7 +9,7 @@ public static class DeviceCheckBuild
 {
     public const string Scene = "Assets/DeviceCheck/DeviceCheck.unity";
     public const string Output = "Builds/DeviceCheck.apk";
-    const string LocalServer = "http://localhost:8765";
+    private const string LocalServer = "http://localhost:8765";
 
     internal static bool Building;
 
@@ -46,7 +46,7 @@ public static class DeviceCheckBuild
         }
     }
 
-    static void EnsureScene()
+    private static void EnsureScene()
     {
         if (AssetDatabase.LoadAssetAtPath<SceneAsset>(Scene) != null) return;
         var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);

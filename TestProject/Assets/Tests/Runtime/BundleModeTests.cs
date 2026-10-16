@@ -15,15 +15,15 @@ namespace H.ContentsLoader.Integration.Tests
     [PrebuildSetup("H.ContentsLoader.Integration.Editor.ContentsBuildSetup")]
     public class BundleModeTests
     {
-        sealed class ProgressRecorder : IProgress<float>
+        private sealed class ProgressRecorder : IProgress<float>
         {
             public readonly List<float> Values = new();
             public void Report(float value) => Values.Add(value);
         }
 
-        string buildRoot;
-        string cacheRoot;
-        AssetBundleBackend backend;
+        private string buildRoot;
+        private string cacheRoot;
+        private AssetBundleBackend backend;
 
         [SetUp]
         public void SetUp()
@@ -41,7 +41,7 @@ namespace H.ContentsLoader.Integration.Tests
         }
 
         // 같은 캐시 폴더로 앱을 다시 켠 상황
-        void Start()
+        private void Start()
         {
             ContentSystem.Shutdown();
             backend = new AssetBundleBackend(new AssetBundleBackendOptions
@@ -53,7 +53,7 @@ namespace H.ContentsLoader.Integration.Tests
             ContentSystem.Initialize(backend);
         }
 
-        static IEnumerator Wait(System.Threading.Tasks.Task task)
+        private static IEnumerator Wait(System.Threading.Tasks.Task task)
         {
             yield return new WaitUntil(() => task.IsCompleted);
             if (task.IsFaulted) throw task.Exception!.InnerException!;
@@ -168,6 +168,69 @@ namespace H.ContentsLoader.Integration.Tests
 
             Assert.That(AssetBundle.GetAllLoadedAssetBundles(), Is.Empty);
             Assert.That(Content.Load<GameObject>("Towers/Cannon"), Is.Not.Null, "해제 후 다시 로드할 수 있어야 함");
+        }
+
+        // Cannon과 Archer는 Shared.mat 팩을 같이 씀. 메모리는 열린 팩 기준으로 한 번만 세야 함
+        [UnityTest]
+        public IEnumerator MemoryCountsSharedPacksOnceAndDropsOnUnload()
+        {
+            var scene = SceneManager.CreateScene($"Owner-{Guid.NewGuid():N}");
+            var caller = new GameObject("Caller");
+            SceneManager.MoveGameObjectToScene(caller, scene);
+            caller.transform.LoadContent<GameObject>("Towers/Cannon");
+            caller.transform.LoadContent<GameObject>("Towers/Archer");
+
+            var lifetime = ContentSystem.Lifetime;
+            var cannon = lifetime.Find("Towers/Cannon", typeof(GameObject)).Size;
+            var archer = lifetime.Find("Towers/Archer", typeof(GameObject)).Size;
+            var openPacks = backend.GetPackInfos().Where(p => p.RefCount > 0).ToList();
+            Assert.That(cannon, Is.GreaterThan(1024), "프리팹 크기에 의존 팩(텍스처, 메시)이 들어가야 함");
+            Assert.That(backend.LoadedBytes, Is.EqualTo(openPacks.Sum(p => p.LoadedBytes)));
+            Assert.That(lifetime.LoadedSize, Is.EqualTo(backend.LoadedBytes));
+            Assert.That(cannon + archer, Is.GreaterThan(backend.LoadedBytes), "공유 팩을 두 번 세면 안 됨");
+
+            var unload = SceneManager.UnloadSceneAsync(scene);
+            while (!unload.isDone) yield return null;
+            yield return null;
+            yield return null;
+
+            Assert.That(backend.LoadedBytes, Is.Zero);
+        }
+
+        // 예산은 실제로 열린 팩 바이트로 판단함. 씬이 내려가 대기 상태가 되면 다음 프레임을 기다리지 않고 바로 내려감
+        [Test]
+        public void BudgetEvictsCachedAssetsByOpenPackBytes()
+        {
+            var scene = SceneManager.CreateScene($"Owner-{Guid.NewGuid():N}");
+            var caller = new GameObject("Caller");
+            SceneManager.MoveGameObjectToScene(caller, scene);
+            caller.transform.LoadContent<GameObject>("Towers/Cannon");
+            var lifetime = ContentSystem.Lifetime;
+            lifetime.MemoryBudget = backend.LoadedBytes - 1;
+            Assert.That(lifetime.Find("Towers/Cannon", typeof(GameObject)).State, Is.EqualTo(ContentState.Loaded), "Loaded 애셋은 예산을 넘어도 유지함");
+
+            lifetime.OnSceneUnloaded(scene);
+
+            Assert.That(lifetime.Find("Towers/Cannon", typeof(GameObject)), Is.Null);
+            Assert.That(backend.LoadedBytes, Is.Zero);
+            SceneManager.UnloadSceneAsync(scene);
+        }
+
+        [UnityTest]
+        public IEnumerator RestartRemovesDownloadsNoCatalogUses()
+        {
+            yield return Wait(Content.Download("Bosses"));
+            var packs = Path.Combine(cacheRoot, "packs");
+            var downloaded = Directory.GetFiles(packs);
+            Assert.That(downloaded, Is.Not.Empty);
+
+            // 이전 패치에서 받았다가 이제 아무 카탈로그도 안 쓰는 팩과 받다 만 파일
+            File.WriteAllText(Path.Combine(packs, "pold_0000.bundle"), "stale");
+            File.WriteAllText(Path.Combine(packs, "pold_0000.bundle.download"), "stale");
+            Start();
+
+            Assert.That(Directory.GetFiles(packs), Is.EquivalentTo(downloaded));
+            Assert.That(Content.IsDownloaded("Bosses/Dragon"), "카탈로그가 쓰는 팩은 그대로 남아야 함");
         }
 
         [UnityTest]

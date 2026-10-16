@@ -13,12 +13,12 @@ namespace H.ContentsLoader
     // 작업 ID를 파일로 남겨서 앱을 다시 켜면 같은 작업을 이어서 기다림
     internal sealed class AndroidDownloadManagerTransfer : IPackTransfer
     {
-        const int StatusSuccessful = 8;
-        const int StatusFailed = 16;
-        const int VisibilityVisible = 0;
-        const float PollSeconds = 0.25f;
+        private const int StatusSuccessful = 8;
+        private const int StatusFailed = 16;
+        private const int VisibilityVisible = 0;
+        private const float PollSeconds = 0.25f;
 
-        readonly struct JobState
+        private readonly struct JobState
         {
             public readonly int Status;
             public readonly long Bytes;
@@ -34,9 +34,9 @@ namespace H.ContentsLoader
             public bool Exists => Status != 0;
         }
 
-        readonly UnityWebRequestTransfer fallback = new();
-        bool warnedCleartext;
-        bool orphansRemoved;
+        private readonly UnityWebRequestTransfer fallback = new();
+        private bool warnedCleartext;
+        private bool orphansRemoved;
 
         // DownloadManager는 앱 전용 외부 저장소에만 쓸 수 있음
         public static bool CanWriteTo(string path) => path.Contains("/Android/data/");
@@ -106,7 +106,7 @@ namespace H.ContentsLoader
         }
 
         // 앱 데이터를 지우면 작업 ID 파일이 사라져도 OS 작업은 남아서 계속 재시도함
-        static void RemoveOrphans(AndroidJavaObject manager, string directory)
+        private static void RemoveOrphans(AndroidJavaObject manager, string directory)
         {
             var known = Directory.Exists(directory)
                 ? Directory.GetFiles(directory, "*.id").Select(f => File.ReadAllText(f).Trim()).ToHashSet()
@@ -127,15 +127,15 @@ namespace H.ContentsLoader
             if (orphans.Count > 0) manager.Call<int>("remove", orphans.ToArray());
         }
 
-        static long SavedId(string destination)
+        private static long SavedId(string destination)
         {
             var idFile = destination + ".id";
             return File.Exists(idFile) && long.TryParse(File.ReadAllText(idFile), out var id) ? id : -1;
         }
 
-        static AndroidJavaObject Manager() => AndroidApplication.currentContext.Call<AndroidJavaObject>("getSystemService", "download");
+        private static AndroidJavaObject Manager() => AndroidApplication.currentContext.Call<AndroidJavaObject>("getSystemService", "download");
 
-        static bool IsCleartextBlocked(string url)
+        private static bool IsCleartextBlocked(string url)
         {
             var uri = new Uri(url);
             if (uri.Scheme != Uri.UriSchemeHttp) return false;
@@ -144,7 +144,7 @@ namespace H.ContentsLoader
             return !policy.Call<bool>("isCleartextTrafficPermitted", uri.Host);
         }
 
-        static long Enqueue(AndroidJavaObject manager, string url, string destination)
+        private static long Enqueue(AndroidJavaObject manager, string url, string destination)
         {
             using var uriClass = new AndroidJavaClass("android.net.Uri");
             using var source = uriClass.CallStatic<AndroidJavaObject>("parse", url);
@@ -157,7 +157,7 @@ namespace H.ContentsLoader
             return manager.Call<long>("enqueue", request);
         }
 
-        static JobState Query(AndroidJavaObject manager, long id)
+        private static JobState Query(AndroidJavaObject manager, long id)
         {
             using var query = new AndroidJavaObject("android.app.DownloadManager$Query");
             query.Call<AndroidJavaObject>("setFilterById", new[] { id }).Dispose();
@@ -176,7 +176,7 @@ namespace H.ContentsLoader
             }
         }
 
-        static void Remove(AndroidJavaObject manager, long id) => manager.Call<int>("remove", new[] { id });
+        private static void Remove(AndroidJavaObject manager, long id) => manager.Call<int>("remove", new[] { id });
     }
 }
 #endif

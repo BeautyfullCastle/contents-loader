@@ -18,7 +18,7 @@ namespace H.ContentsLoader.Editor
     // 파일 단위 수집. 오브젝트 단위가 필요해지면 ContentBuildInterface 기반 구현으로 바꿈
     internal sealed class FileDependencyCollector : IDependencyCollector
     {
-        static readonly HashSet<string> Excluded = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly HashSet<string> Excluded = new(StringComparer.OrdinalIgnoreCase)
         {
             ".cs", ".dll", ".asmdef", ".asmref", ".unity",
         };
@@ -42,7 +42,7 @@ namespace H.ContentsLoader.Editor
             return AssetDatabase.GetMainAssetTypeAtPath(AssetDatabase.GUIDToAssetPath(guid)) == typeof(Shader);
         }
 
-        static bool IsBundleable(string path)
+        private static bool IsBundleable(string path)
         {
             return (path.StartsWith("Assets/", StringComparison.Ordinal) || path.StartsWith("Packages/", StringComparison.Ordinal))
                    && !Excluded.Contains(Path.GetExtension(path))

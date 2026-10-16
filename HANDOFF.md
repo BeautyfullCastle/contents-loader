@@ -125,7 +125,7 @@ var shopUi = Content.Load<GameObject>("UI/Shop", ContentLife.App);
 3. B 로드 완료 다음 프레임 → 아무도 회수하지 않은 `Cached` 애셋만 실제 언로드
 4. 추가로 메모리 예산(설정값)을 넘으면 LRU로 `Cached`부터 축출
 
-상태 머신: `Loading → Owned → Cached → Unloaded` (Cached → Owned 복귀 가능)
+상태 머신: `Loading → Loaded → Cached → Unloaded` (Cached → Loaded 복귀 가능)
 
 ### 4.3 금지 사항
 - GC/파이널라이저 기반 자동 해제 금지 (비결정적, 파이널라이저 스레드에서 Unity API 호출 불가).
@@ -197,7 +197,7 @@ interface IContentBackend {
 ## 7. 에디터 툴 (MVP 이후, 우선순위 낮음)
 
 `Window > Contents Loader` 에디터 윈도우 (UI Toolkit):
-- **Runtime 탭**: 메모리 예산 바(Owned/Cached/Pinned), 씬별 소유 애셋 트리, 애셋 상태·크기·백엔드, 이벤트 로그(Load / 캐시 적중 / Evict).
+- **Runtime 탭**: 메모리 예산 바(Loaded/Cached/Pinned), 씬별 소유 애셋 트리, 애셋 상태·크기·백엔드, 이벤트 로그(Load / 캐시 적중 / Evict).
 - **Catalog 탭**: `Contents/` 폴더 트리 + Delivery 체크박스, 자동 생성 팩 목록과 각 팩의 시그니처, 이전 빌드 대비 diff(추가/삭제/재배치 사유/중복 경고), 원격 패치 크기.
 
 ---
@@ -243,7 +243,7 @@ Unity.exe -batchmode -quit -projectPath "<경로>\TestProject" -executeMethod H.
 1. 환경 확인 (Unity 버전, CLI 경로) → TestProject 생성 → 패키지 골격(`package.json`, asmdef 4개) 생성 → 빈 테스트 1개가 CLI로 도는지 확인
 2. 폴더 스캔 + 설정(Delivery) + 카탈로그 모델
 3. AssetDatabase 백엔드 + `Content.Load` / `LoadAsync`
-4. 씬 귀속 수명 관리 (Owned/Cached/지연 언로드/LRU)
+4. 씬 귀속 수명 관리 (Loaded/Cached/지연 언로드/LRU)
 5. 클러스터링 알고리즘 (순수 로직 + 테스트)
 6. AssetBundle 빌드 파이프라인 + 번들 백엔드 + 빌드 검증 테스트
 7. Download (원격 → 캐시 → LZ4 재압축) + 패치 오버레이

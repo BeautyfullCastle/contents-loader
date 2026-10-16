@@ -1,5 +1,6 @@
 using System.IO;
 using UnityEditor;
+using UnityEngine;
 
 namespace H.ContentsLoader.Editor
 {
@@ -16,5 +17,15 @@ namespace H.ContentsLoader.Editor
         public static string EditorCache(BuildTarget target) => $"Library/ContentsLoader/Cache/{target}";
 
         public static string RemoteFileUrl(BuildTarget target) => "file:///" + Path.GetFullPath(Remote(target)).Replace('\\', '/').TrimStart('/');
+
+        // 에디터 플레이 모드에서 열 수 있는 빌드 타깃. 모바일용 번들은 셰이더가 에디터 그래픽 API용으로 컴파일되지 않아 화면이 깨짐
+        public static BuildTarget PlayModeTarget => Application.platform switch
+        {
+            RuntimePlatform.WindowsEditor => BuildTarget.StandaloneWindows64,
+            RuntimePlatform.OSXEditor => BuildTarget.StandaloneOSX,
+            _ => BuildTarget.StandaloneLinux64,
+        };
+
+        public static bool HasBuild(BuildTarget target) => File.Exists($"{BuiltIn(target)}/{ContentCatalog.FileName}");
     }
 }

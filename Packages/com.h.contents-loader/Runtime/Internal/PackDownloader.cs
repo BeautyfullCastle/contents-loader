@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -11,13 +12,15 @@ namespace H.ContentsLoader
     {
         private readonly string cacheDirectory;
         private readonly Func<string> remoteUrl;
+        private readonly Func<RemoteCompression> compression;
         private readonly IPackTransfer transfer;
         private readonly Dictionary<string, Task> running = new();
 
-        public PackDownloader(string cacheDirectory, Func<string> remoteUrl, IPackTransfer transfer)
+        public PackDownloader(string cacheDirectory, Func<string> remoteUrl, Func<RemoteCompression> compression, IPackTransfer transfer)
         {
             this.cacheDirectory = cacheDirectory;
             this.remoteUrl = remoteUrl;
+            this.compression = compression;
             this.transfer = transfer;
         }
 
@@ -60,10 +63,21 @@ namespace H.ContentsLoader
             return removed;
         }
 
+        private static readonly string[] WorkSuffixes = { ".download", ".lz4", ".unc", ".id" };
+
+        // 작업 파일 이름은 팩 파일 이름 뒤에 접미사를 여러 개 붙인 것임 (x.bundle.download.id)
         private static string StripSuffix(string name)
         {
-            foreach (var suffix in new[] { ".download.id", ".download", ".lz4", ".id" })
-                if (name.EndsWith(suffix, StringComparison.Ordinal)) return name.Substring(0, name.Length - suffix.Length);
+            for (var stripped = true; stripped;)
+            {
+                stripped = false;
+                foreach (var suffix in WorkSuffixes)
+                {
+                    if (!name.EndsWith(suffix, StringComparison.Ordinal)) continue;
+                    name = name.Substring(0, name.Length - suffix.Length);
+                    stripped = true;
+                }
+            }
             return name;
         }
 
@@ -103,28 +117,60 @@ namespace H.ContentsLoader
         private async Task Fetch(ContentCatalog.Pack pack, Action<long> reportBytes)
         {
             Directory.CreateDirectory(cacheDirectory);
-            var url = $"{remoteUrl()}/{pack.FileName}";
+            var format = compression();
+            var url = $"{remoteUrl()}/{ContentCatalog.RemoteFileName(pack.FileName, format)}";
             var target = Path.Combine(cacheDirectory, pack.FileName);
             var downloaded = PartialPathOf(pack.FileName);
-            var recompressed = target + ".lz4";
 
             await transfer.Fetch(url, downloaded, pack.Size, reportBytes);
             reportBytes(pack.Size);
 
-            // 전송은 LZMA로 작게, 저장은 LZ4로 바꿈. LZMA 번들은 열 때마다 전체 압축을 풀어야 함
-            var recompress = AssetBundle.RecompressAssetBundleAsync(downloaded, recompressed, BuildCompression.LZ4Runtime);
+            var installed = await Install(format, downloaded, target, url);
+            if (File.Exists(target)) File.Delete(target);
+            File.Move(installed, target);
+            CacheFiles.ExcludeFromBackup(target);
+            DownloadCount++;
+        }
+
+        // 받은 파일을 LZ4 번들로 만들어 그 경로를 돌려줌. LZMA 번들은 열 때마다 전체 압축을 풀어야 해서 그대로 두지 않음
+        private static async Task<string> Install(RemoteCompression format, string downloaded, string target, string url)
+        {
+            if (format == RemoteCompression.LZ4) return downloaded;
+
+            var source = downloaded;
+            if (format == RemoteCompression.GZip)
+            {
+                source = target + ".unc";
+                try
+                {
+                    await Task.Run(() => Decompress(downloaded, source));
+                }
+                catch (Exception e) when (e is IOException || e is InvalidDataException)
+                {
+                    File.Delete(downloaded);
+                    if (File.Exists(source)) File.Delete(source);
+                    throw new ContentDownloadException(url, $"압축을 풀지 못했습니다: {e.Message}");
+                }
+                File.Delete(downloaded);
+            }
+
+            var recompressed = target + ".lz4";
+            var recompress = AssetBundle.RecompressAssetBundleAsync(source, recompressed, BuildCompression.LZ4Runtime);
             await recompress.AsTask();
-            File.Delete(downloaded);
+            File.Delete(source);
             if (!recompress.success)
             {
                 File.Delete(recompressed);
                 throw new ContentDownloadException(url, $"재압축에 실패했습니다: {recompress.humanReadableResult}");
             }
+            return recompressed;
+        }
 
-            if (File.Exists(target)) File.Delete(target);
-            File.Move(recompressed, target);
-            CacheFiles.ExcludeFromBackup(target);
-            DownloadCount++;
+        private static void Decompress(string gzipPath, string destination)
+        {
+            using var input = new GZipStream(File.OpenRead(gzipPath), CompressionMode.Decompress);
+            using var output = File.Create(destination);
+            input.CopyTo(output, 1 << 20);
         }
     }
 }

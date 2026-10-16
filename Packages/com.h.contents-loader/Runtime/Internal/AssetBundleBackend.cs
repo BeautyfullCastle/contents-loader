@@ -98,7 +98,8 @@ namespace H.ContentsLoader
             builtInFiles = new HashSet<string>(catalogs.BuiltIn.Packs
                 .Where(p => p.Delivery == ContentDelivery.BuiltIn)
                 .Select(p => p.FileName));
-            downloader = new PackDownloader(Path.Combine(options.CacheRoot, "packs"), () => RemoteUrl, options.Transfer ?? PackTransfer.CreateDefault());
+            downloader = new PackDownloader(Path.Combine(options.CacheRoot, "packs"), () => RemoteUrl, () => catalogs.Current.RemoteCompression,
+                options.Transfer ?? PackTransfer.CreateDefault());
             RemoveUnusedCache();
         }
 

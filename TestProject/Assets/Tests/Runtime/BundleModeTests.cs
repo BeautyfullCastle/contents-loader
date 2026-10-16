@@ -38,6 +38,7 @@ namespace H.ContentsLoader.Integration.Tests
         {
             ContentSystem.Shutdown();
             if (Directory.Exists(cacheRoot)) Directory.Delete(cacheRoot, true);
+            if (Directory.Exists(cacheRoot + "-remote")) Directory.Delete(cacheRoot + "-remote", true);
         }
 
         // 같은 캐시 폴더로 앱을 다시 켠 상황
@@ -132,6 +133,61 @@ namespace H.ContentsLoader.Integration.Tests
             Assert.That(Content.Load<GameObject>("Bosses/Dragon"), Is.Not.Null);
             Assert.That(backend.DownloadCount, Is.Zero);
         }
+
+        // 기본 빌드의 LZ4 번들로 GZip, LZ4 형식 서버를 흉내 내고 새 카탈로그로 받음
+        private string MakeRemote(RemoteCompression format)
+        {
+            var catalog = ContentCatalog.FromBytes(File.ReadAllBytes(Path.Combine(buildRoot, "Remote", ContentCatalog.FileName)));
+            var lz4 = Path.GetFullPath($"Library/ContentsLoader/Build/{EditorUserBuildSettings.activeBuildTarget}/lz4");
+            var remote = cacheRoot + "-remote";
+            Directory.CreateDirectory(remote);
+            for (var i = 0; i < catalog.Packs.Length; i++)
+            {
+                var name = catalog.Packs[i].FileName;
+                var bytes = File.ReadAllBytes(Path.Combine(lz4, name.Substring(0, name.IndexOf('_'))));
+                if (format == RemoteCompression.GZip)
+                {
+                    using var buffer = new MemoryStream();
+                    using (var gzip = new System.IO.Compression.GZipStream(buffer, System.IO.Compression.CompressionLevel.Fastest, true))
+                        gzip.Write(bytes, 0, bytes.Length);
+                    bytes = buffer.ToArray();
+                }
+                File.WriteAllBytes(Path.Combine(remote, ContentCatalog.RemoteFileName(name, format)), bytes);
+                catalog.Packs[i].Size = bytes.Length;
+            }
+            catalog.RemoteCompression = format;
+            catalog.BuildTimestamp++;
+            File.WriteAllBytes(Path.Combine(remote, ContentCatalog.FileName), catalog.ToBytes());
+            return "file:///" + remote.Replace('\\', '/');
+        }
+
+        private IEnumerator DownloadsWith(RemoteCompression format)
+        {
+            ContentSystem.Shutdown();
+            backend = new AssetBundleBackend(new AssetBundleBackendOptions
+            {
+                BuiltInRoot = Path.Combine(buildRoot, "BuiltIn"),
+                CacheRoot = cacheRoot,
+                RemoteUrl = MakeRemote(format),
+            });
+            ContentSystem.Initialize(backend);
+            var update = backend.UpdateCatalog();
+            yield return Wait(update);
+            Assert.That(update.Result, "새 카탈로그를 적용해야 함");
+
+            var task = Content.LoadAsync<GameObject>("Bosses/Dragon");
+            yield return Wait(task);
+
+            Assert.That(task.Result, Is.Not.Null);
+            Assert.That(backend.DownloadCount, Is.EqualTo(1));
+            Assert.That(Directory.GetFiles(Path.Combine(cacheRoot, "packs")).Where(f => !f.EndsWith(".bundle")), Is.Empty, "작업 파일이 남으면 안 됨");
+        }
+
+        [UnityTest]
+        public IEnumerator DownloadsGZipPacks() => DownloadsWith(RemoteCompression.GZip);
+
+        [UnityTest]
+        public IEnumerator DownloadsLz4Packs() => DownloadsWith(RemoteCompression.LZ4);
 
         [UnityTest]
         public IEnumerator DownloadFolderReportsProgressAndEnablesSyncLoad()

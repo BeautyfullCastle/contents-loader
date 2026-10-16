@@ -49,6 +49,9 @@ namespace H.ContentsLoader.Editor
         [Tooltip("Base URL for Download packs. The build target name replaces {Platform}.")]
         public string RemoteUrl = "";
 
+        [Tooltip("Compression of packs uploaded to RemoteUrl. LZMA is smallest but slowest to build; GZip and LZ4 build faster with larger downloads. Players follow the format in the server catalog, but apps built before this setting existed only request LZMA files.")]
+        public RemoteCompression RemoteCompression = RemoteCompression.LZMA;
+
         [Tooltip("Cached assets are evicted, oldest first, while open pack bytes exceed this value. Packs shared by several assets count once. 0 means no limit.")]
         public int MemoryBudgetMB;
 

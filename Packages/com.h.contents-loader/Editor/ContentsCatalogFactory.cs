@@ -8,9 +8,9 @@ namespace H.ContentsLoader.Editor
 {
     internal static class ContentsCatalogFactory
     {
-        // sizeFolder는 원격으로 내려받는 크기를 재는 번들 폴더임
+        // sizeOf는 팩 ID로 서버에서 내려받는 파일 크기를 줌
         public static ContentCatalog Create(ContentsBuildResult result, List<ContentsEntry> entries,
-            Dictionary<ContentsEntry, string> guidOf, Dictionary<string, string[]> dependencies, string sizeFolder,
+            Dictionary<ContentsEntry, string> guidOf, Dictionary<string, string[]> dependencies, Func<string, long> sizeOf,
             ContentsSettings settings, BuildTarget target)
         {
             var packs = result.Clusters.Layout.Packs;
@@ -25,7 +25,7 @@ namespace H.ContentsLoader.Editor
                 {
                     FileName = result.FileOfPack[p.Id],
                     Delivery = p.Delivery,
-                    Size = new FileInfo($"{sizeFolder}/{p.Id}").Length,
+                    Size = sizeOf(p.Id),
                     Dependencies = dependencies[p.Id].Select(d => indexOf[d]).OrderBy(i => i).ToArray(),
                 }).ToArray(),
             };

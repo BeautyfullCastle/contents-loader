@@ -54,7 +54,7 @@ Built-in과 Download가 같이 쓰는 애셋은 항상 Built-in에 들어갑니�
 - 스크립트로 빌드할 때는 `BuildPipeline.BuildPlayer` 대신 `ContentsBuilder.BuildPlayer(options)`를 씁니다. Unity는 플레이어 빌드 콜백 안에서 번들을 빌드하면 크래시하므로 콘텐츠를 먼저 빌드해야 합니다.
 - 출력은 프로젝트 루트의 `ContentsBuild/<BuildTarget>/`입니다.
   - `BuiltIn/`: 앱에 들어가는 LZ4 팩과 카탈로그
-  - `Remote/`: 서버에 올릴 LZMA 팩 전체와 카탈로그. `RemoteUrl`에 올립니다.
+  - `Remote/`: 서버에 올릴 팩 전체와 카탈로그. `RemoteUrl`에 올립니다. 팩 압축은 `RemoteCompression`을 따릅니다.
   - `layout.json`: 직전 팩 배치입니다. 패치 크기를 줄이려면 버전 관리에 넣습니다.
   - `report.txt`: 팩별 구성과 경고입니다.
 - `Bundles` 플레이 모드는 에디터 플랫폼(Windows면 `StandaloneWindows64`) 빌드를 읽습니다. 활성 빌드 타깃이 Android 같은 모바일이면 그 번들의 셰이더가 에디터에서 깨져 보이기 때문입니다. `Tools > Contents Loader > Build Content for Play Mode`로 만듭니다. 에디터 플랫폼 빌드가 없으면 경고와 함께 활성 타깃 빌드를 읽습니다.
@@ -67,6 +67,7 @@ Built-in과 Download가 같이 쓰는 애셋은 항상 Built-in에 들어갑니�
 |---|---|
 | `DefaultDelivery` | 폴더 규칙이 없는 모든 `Contents` 폴더의 Delivery입니다. 앱을 작게 하고 전부 받게 하려면 `Download`로 둡니다. 폴더 인스펙터의 Delivery는 이 값을 덮어씁니다. |
 | `RemoteUrl` | Download 팩을 받을 주소입니다. `{Platform}`은 빌드 타깃 이름으로 바뀝니다. |
+| `RemoteCompression` | 서버에 올리는 팩의 압축입니다. 기기는 받은 뒤 항상 LZ4로 저장합니다. 아래 표를 보세요. |
 | `MemoryBudgetMB` | 메모리 사용량이 넘으면 대기 상태(Cached) 애셋부터 오래된 순으로 해제합니다. 사용량은 열린 팩 파일(LZ4) 크기의 합이고, 여러 애셋이 같이 쓰는 팩은 한 번만 셉니다. 에디터 AssetDatabase 모드에서는 애셋과 의존 오브젝트의 런타임 크기 합으로 추정합니다. 0은 제한 없음입니다. |
 | `SmallPackThresholdKB` | 이보다 작은 팩은 상위 팩에 합칩니다. 기본 64KB입니다. |
 | `SignatureByFolder` | 공유 애셋 분류를 애셋이 아닌 폴더 단위로 합니다. 폴더에 애셋을 추가해도 다른 팩이 안 바뀝니다. |
@@ -86,6 +87,18 @@ Built-in과 Download가 같이 쓰는 애셋은 항상 Built-in에 들어갑니�
 - 위쪽 막대는 메모리 예산 대비 사용량이고, `Unload Cached`는 씬 전환을 기다리지 않고 대기 상태 애셋을 바로 해제합니다.
 
 상태는 `Loading → Loaded ⇄ Cached → 해제` 순서로 바뀝니다. 소유 씬이 하나라도 남아 있으면 Loaded, 소유 씬이 모두 내려가면 Cached가 되고, 다음 프레임에 다시 쓰이지 않으면 해제됩니다.
+
+## 원격 압축 (`RemoteCompression`)
+
+| | 다운로드 크기 | 빌드 시간 | 파일 이름 |
+|---|---|---|---|
+| `LZMA` (기본) | 가장 작음 | 가장 느림. 바뀐 팩을 LZMA로 한 번 더 빌드함 | `팩.bundle` |
+| `GZip` | LZMA보다 2~3할 큼 | 바뀐 팩만 병렬로 압축하고 결과를 캐시함 | `팩.bundle.gz` |
+| `LZ4` | 가장 큼 (LZMA의 1.5배 정도) | 가장 빠름. 앱 내장 팩과 같은 파일을 올림 | `팩.bundle.lz4` |
+
+쇼케이스의 4K 텍스처 팩(압축 전 67MB) 기준으로 LZMA 33MB, GZip 41MB, LZ4 50MB였습니다. 텍스처를 바꾼 뒤 빌드 시간은 LZMA에서 20초 안팎이고 대부분이 LZMA 압축입니다.
+
+개발 중에는 GZip이나 LZ4로 빨리 돌리고 출시 빌드는 LZMA로 하는 식으로 쓰면 됩니다. 앱은 서버 카탈로그에 적힌 형식을 따라 받으므로 출시 후에 바꿔도 됩니다. 다만 이 설정이 생기기 전 패키지로 빌드한 앱은 LZMA 파일만 요청하니, 그런 앱이 남아 있으면 LZMA를 유지하세요.
 
 ## 다운로드
 

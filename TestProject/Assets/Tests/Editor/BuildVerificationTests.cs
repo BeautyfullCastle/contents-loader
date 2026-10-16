@@ -12,13 +12,14 @@ namespace H.ContentsLoader.Integration.Editor
     {
         public static BuildTarget Target => EditorUserBuildSettings.activeBuildTarget;
 
-        public static ContentsBuildResult Run(int smallPackThresholdKB, bool ignorePrevious = true)
+        public static ContentsBuildResult Run(int smallPackThresholdKB, bool ignorePrevious = true, RemoteCompression compression = RemoteCompression.LZMA)
         {
             var settings = Object.Instantiate(ContentsSettings.Find());
             try
             {
                 settings.SmallPackThresholdKB = smallPackThresholdKB;
                 settings.IgnorePreviousLayout = ignorePrevious;
+                settings.RemoteCompression = compression;
                 var result = ContentsBuilder.Build(Target, settings);
                 Assert.That(result.Errors, Is.Empty);
                 return result;
@@ -184,6 +185,62 @@ namespace H.ContentsLoader.Integration.Editor
 
             Assert.That(cannon, Is.SameAs(merged.Clusters.PackOf[FixtureBuild.Guid("Assets/Art/Shared.png")]));
             Assert.That(merged.Clusters.PackOf[FixtureBuild.Guid("Assets/Art/Dragon.png")].Delivery, Is.EqualTo(ContentDelivery.Download));
+        }
+    }
+
+    public class RemoteCompressionBuildTests
+    {
+        // 다른 테스트가 기본 빌드 결과를 쓰므로 끝나면 되돌림
+        [OneTimeTearDown]
+        public void RestoreDefaultBuild() => FixtureBuild.Run(smallPackThresholdKB: 64);
+
+        private static string RemoteFile(ContentsBuildResult result, ContentCatalog.Pack pack) =>
+            $"{result.RemoteDirectory}/{ContentCatalog.RemoteFileName(pack.FileName, result.Catalog.RemoteCompression)}";
+
+        [Test]
+        public void GZipPacksAreUncompressedBundlesAndSizesMatch()
+        {
+            var result = FixtureBuild.Run(smallPackThresholdKB: 64, compression: RemoteCompression.GZip);
+            var catalog = ContentCatalog.FromBytes(File.ReadAllBytes($"{result.RemoteDirectory}/{ContentCatalog.FileName}"));
+
+            Assert.That(catalog.RemoteCompression, Is.EqualTo(RemoteCompression.GZip));
+            foreach (var pack in catalog.Packs)
+            {
+                var file = RemoteFile(result, pack);
+                Assert.That(new FileInfo(file).Length, Is.EqualTo(pack.Size), file);
+
+                using var input = new System.IO.Compression.GZipStream(File.OpenRead(file), System.IO.Compression.CompressionMode.Decompress);
+                using var buffer = new MemoryStream();
+                input.CopyTo(buffer);
+                var bundle = AssetBundle.LoadFromMemory(buffer.ToArray());
+                Assert.That(bundle, Is.Not.Null, file);
+                bundle.Unload(true);
+            }
+        }
+
+        // 안 바뀐 팩은 이전 gzip 결과를 그대로 씀
+        [Test]
+        public void GZipRebuildReusesUnchangedPacks()
+        {
+            var first = FixtureBuild.Run(smallPackThresholdKB: 64, ignorePrevious: false, compression: RemoteCompression.GZip);
+            var times = first.Catalog.Packs.ToDictionary(p => p.FileName, p => File.GetLastWriteTimeUtc($"{first.WorkDirectory}/gzip/{p.FileName.Replace(".bundle", "")}.gz"));
+
+            var second = FixtureBuild.Run(smallPackThresholdKB: 64, ignorePrevious: false, compression: RemoteCompression.GZip);
+
+            foreach (var pack in second.Catalog.Packs)
+                Assert.That(File.GetLastWriteTimeUtc($"{second.WorkDirectory}/gzip/{pack.FileName.Replace(".bundle", "")}.gz"), Is.EqualTo(times[pack.FileName]), pack.FileName);
+        }
+
+        [Test]
+        public void Lz4RemotePacksAreTheBuiltLz4Bundles()
+        {
+            var result = FixtureBuild.Run(smallPackThresholdKB: 64, compression: RemoteCompression.LZ4);
+
+            foreach (var pack in result.Catalog.Packs)
+            {
+                var id = pack.FileName.Substring(0, pack.FileName.IndexOf('_'));
+                Assert.That(File.ReadAllBytes(RemoteFile(result, pack)), Is.EqualTo(File.ReadAllBytes($"{result.WorkDirectory}/lz4/{id}")), pack.FileName);
+            }
         }
     }
 }

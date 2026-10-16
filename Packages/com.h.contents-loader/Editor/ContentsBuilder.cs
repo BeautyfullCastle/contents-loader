@@ -1,9 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
+using CompressionLevel = System.IO.Compression.CompressionLevel;
+using ThreadPriority = UnityEngine.ThreadPriority;
 
 namespace H.ContentsLoader.Editor
 {
@@ -21,13 +26,23 @@ namespace H.ContentsLoader.Editor
         public string RemoteDirectory;
         public string WorkDirectory;
 
+        // 단계별 소요 시간(ms). 빌드 로그와 리포트에 씀
+        public readonly List<(string Phase, long Milliseconds)> Timings = new();
+
         public bool Success => Errors.Count == 0;
+
+        internal void Time(string phase, System.Diagnostics.Stopwatch watch)
+        {
+            Timings.Add((phase, watch.ElapsedMilliseconds));
+            watch.Restart();
+        }
     }
 
     public static class ContentsBuilder
     {
         private const string Lz4Folder = "lz4";
         private const string LzmaFolder = "lzma";
+        private const string GZipFolder = "gzip";
 
         /// <summary>Entry point for <c>-executeMethod</c>. Builds for the active build target and exits with code 1 on failure.</summary>
         public static void BuildFromCommandLine()
@@ -66,6 +81,7 @@ namespace H.ContentsLoader.Editor
         {
             settings ??= ContentsSettings.FindOrDefault();
             collector ??= new FileDependencyCollector();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             var result = new ContentsBuildResult
             {
                 BuiltInDirectory = ContentsBuildPaths.BuiltIn(target),
@@ -78,6 +94,7 @@ namespace H.ContentsLoader.Editor
             result.Warnings.AddRange(scan.Warnings);
             if (!result.Success) return Finish(result);
 
+            result.Time("scan", watch);
             var entries = scan.Entries;
             var guidOf = entries.ToDictionary(e => e, e => AssetDatabase.AssetPathToGUID(e.AssetPath));
             var roots = entries.Select(e => new ClusterRoot
@@ -88,6 +105,7 @@ namespace H.ContentsLoader.Editor
             }).ToList();
 
             var nodes = DependencyGraph.Collect(roots.Select(r => r.Key), collector);
+            result.Time("dependencies", watch);
             var previous = settings.IgnorePreviousLayout ? null : ReadLayout(target);
             result.Clusters = PackClustering.Run(roots, nodes, new ClusterOptions
             {
@@ -98,6 +116,7 @@ namespace H.ContentsLoader.Editor
             WarnNestedRootPrefabs(entries, guidOf, result);
             WarnDeliveryChanges(previous ?? ReadLayout(target), result, entries, guidOf);
             result.ImplicitMembers.UnionWith(SelectImplicitMembers(result.Clusters, nodes, roots.Select(r => r.Key)));
+            result.Time("layout", watch);
 
             var builds = result.Clusters.Layout.Packs.Select(p => new AssetBundleBuild
             {
@@ -108,29 +127,38 @@ namespace H.ContentsLoader.Editor
             {
                 result.Warnings.Add("Contents 폴더에 빌드할 애셋이 없습니다.");
                 result.Catalog = new ContentCatalog { BuildTimestamp = DateTime.UtcNow.Ticks };
-                WriteOutput(result, false);
+                WriteOutput(result, null);
                 return Finish(result);
             }
 
             var lz4 = BuildBundles(result, builds, BuildAssetBundleOptions.ChunkBasedCompression, Lz4Folder, target);
+            result.Time("bundles", watch);
             if (lz4 == null) return Finish(result);
 
             var needsRemote = result.Clusters.Layout.Packs.Any(p => p.Delivery == ContentDelivery.Download)
                               || !string.IsNullOrEmpty(settings.RemoteUrl);
-            if (needsRemote && BuildBundles(result, builds, BuildAssetBundleOptions.None, LzmaFolder, target) == null)
-                return Finish(result);
+            Dictionary<string, string> remoteFiles = null;
+            if (needsRemote)
+            {
+                remoteFiles = BuildRemoteFiles(result, builds, lz4, settings.RemoteCompression, target);
+                if (remoteFiles == null) return Finish(result);
+            }
+            result.Time("remote compression", watch);
 
             foreach (var pack in result.Clusters.Layout.Packs)
                 result.FileOfPack[pack.Id] = $"{pack.Id}_{lz4.Hashes[pack.Id]}.bundle";
 
             result.Catalog = ContentsCatalogFactory.Create(result, entries, guidOf, lz4.Dependencies,
-                $"{result.WorkDirectory}/{(needsRemote ? LzmaFolder : Lz4Folder)}", settings, target);
+                id => new FileInfo(remoteFiles != null ? remoteFiles[id] : $"{result.WorkDirectory}/{Lz4Folder}/{id}").Length, settings, target);
+            if (needsRemote) result.Catalog.RemoteCompression = settings.RemoteCompression;
             VerifyDeliveryBoundary(result, lz4);
             if (!result.Success) return Finish(result);
 
-            WriteOutput(result, needsRemote);
+            result.Time("catalog", watch);
+            WriteOutput(result, remoteFiles);
             WriteLayout(target, result.Clusters.Layout);
             WriteContentTypes(target, result);
+            result.Time("output", watch);
             ContentsBuildReport.Write(target, result, entries, guidOf);
             if (settings.GeneratePathConstants)
                 PathConstantsGenerator.Write(settings.PathConstantsFile, entries.Select(e => e.Path));
@@ -142,7 +170,8 @@ namespace H.ContentsLoader.Editor
             foreach (var warning in result.Warnings) Debug.LogWarning($"[Contents Loader] {warning}");
             foreach (var error in result.Errors) Debug.LogError($"[Contents Loader] {error}");
             if (result.Success)
-                Debug.Log($"[Contents Loader] 빌드 완료: 팩 {result.Clusters?.Layout.Packs.Count ?? 0}개, 경로 {result.Catalog?.Entries.Length ?? 0}개");
+                Debug.Log($"[Contents Loader] 빌드 완료: 팩 {result.Clusters?.Layout.Packs.Count ?? 0}개, 경로 {result.Catalog?.Entries.Length ?? 0}개, " +
+                          $"{result.Timings.Sum(t => t.Milliseconds) / 1000.0:0.0}초 ({string.Join(", ", result.Timings.Select(t => $"{t.Phase} {t.Milliseconds}ms"))})");
             return result;
         }
 
@@ -190,7 +219,8 @@ namespace H.ContentsLoader.Editor
                     result.Errors.Add($"Built-in 팩 {pack.Id}이(가) Download 팩 {dependency}에 의존합니다.");
         }
 
-        private static void WriteOutput(ContentsBuildResult result, bool remote)
+        // remoteFiles는 팩 ID별 서버용 파일. null이면 원격 출력을 만들지 않음
+        private static void WriteOutput(ContentsBuildResult result, Dictionary<string, string> remoteFiles)
         {
             ResetDirectory(result.BuiltInDirectory);
             var bytes = result.Catalog.ToBytes();
@@ -199,11 +229,65 @@ namespace H.ContentsLoader.Editor
                 File.Copy($"{result.WorkDirectory}/{Lz4Folder}/{pack.Id}", $"{result.BuiltInDirectory}/{result.FileOfPack[pack.Id]}");
 
             ResetDirectory(result.RemoteDirectory);
-            if (!remote) return;
+            if (remoteFiles == null) return;
             // 원격에는 Built-in 팩도 올림. 패치로 바뀐 Built-in 팩은 앱에 없어서 받아야 함
             File.WriteAllBytes($"{result.RemoteDirectory}/{ContentCatalog.FileName}", bytes);
             foreach (var pack in result.Clusters.Layout.Packs)
-                File.Copy($"{result.WorkDirectory}/{LzmaFolder}/{pack.Id}", $"{result.RemoteDirectory}/{result.FileOfPack[pack.Id]}");
+            {
+                var name = ContentCatalog.RemoteFileName(result.FileOfPack[pack.Id], result.Catalog.RemoteCompression);
+                File.Copy(remoteFiles[pack.Id], $"{result.RemoteDirectory}/{name}");
+            }
+        }
+
+        private static Dictionary<string, string> BuildRemoteFiles(ContentsBuildResult result, AssetBundleBuild[] builds, BuiltBundles lz4,
+            RemoteCompression compression, BuildTarget target)
+        {
+            var ids = result.Clusters.Layout.Packs.Select(p => p.Id).ToList();
+            switch (compression)
+            {
+                case RemoteCompression.LZ4:
+                    return ids.ToDictionary(id => id, id => $"{result.WorkDirectory}/{Lz4Folder}/{id}");
+                case RemoteCompression.GZip:
+                    return GZipPacks(result, ids, lz4);
+                default:
+                    // Unity는 이미 만든 번들을 LZMA로 재압축하지 못해서 LZMA로 한 번 더 빌드함. 안 바뀐 번들은 Unity가 건너뜀
+                    if (BuildBundles(result, builds, BuildAssetBundleOptions.None, LzmaFolder, target) == null) return null;
+                    return ids.ToDictionary(id => id, id => $"{result.WorkDirectory}/{LzmaFolder}/{id}");
+            }
+        }
+
+        // LZ4 번들을 압축 없는 번들로 푼 뒤 gzip함. 결과는 LZ4 해시별로 남겨서 안 바뀐 팩은 다시 압축하지 않음
+        private static Dictionary<string, string> GZipPacks(ContentsBuildResult result, List<string> ids, BuiltBundles lz4)
+        {
+            var folder = $"{result.WorkDirectory}/{GZipFolder}";
+            Directory.CreateDirectory(folder);
+            var files = ids.ToDictionary(id => id, id => $"{folder}/{id}_{lz4.Hashes[id]}.gz");
+            var stale = ids.Where(id => !File.Exists(files[id])).ToList();
+
+            // Unity 재압축은 작업 스레드에서 돌아서 한꺼번에 시작하고 끝날 때까지 기다림
+            var operations = stale.Select(id => (Id: id, Operation: AssetBundle.RecompressAssetBundleAsync(
+                $"{result.WorkDirectory}/{Lz4Folder}/{id}", $"{folder}/{id}.unc", BuildCompression.Uncompressed, 0, ThreadPriority.High))).ToList();
+            while (operations.Any(o => !o.Operation.isDone)) Thread.Sleep(5);
+            foreach (var (id, operation) in operations)
+                if (!operation.success) result.Errors.Add($"팩 {id}의 압축을 풀지 못했습니다: {operation.humanReadableResult}");
+            if (!result.Success) return null;
+
+            Parallel.ForEach(stale, id =>
+            {
+                var uncompressed = $"{folder}/{id}.unc";
+                var temp = files[id] + ".tmp";
+                using (var input = File.OpenRead(uncompressed))
+                using (var output = new GZipStream(File.Create(temp), CompressionLevel.Optimal))
+                    input.CopyTo(output, 1 << 20);
+                File.Delete(uncompressed);
+                File.Move(temp, files[id]);
+            });
+
+            // 같은 팩의 이전 결과와 레이아웃에서 빠진 팩은 지움
+            var keep = new HashSet<string>(files.Values.Select(Path.GetFileName));
+            foreach (var path in Directory.GetFiles(folder))
+                if (!keep.Contains(Path.GetFileName(path))) File.Delete(path);
+            return files;
         }
 
         private static void ResetDirectory(string path)

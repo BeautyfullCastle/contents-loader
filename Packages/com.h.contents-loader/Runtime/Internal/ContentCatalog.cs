@@ -39,6 +39,9 @@ namespace H.ContentsLoader
         public long BuildTimestamp;
         public string RemoteUrl = "";
         public long MemoryBudget = long.MaxValue;
+
+        // 서버에 올린 팩의 압축 형식. 파일 끝에 붙여서 이 필드가 없던 앱도 카탈로그를 그대로 읽음
+        public RemoteCompression RemoteCompression = RemoteCompression.LZMA;
         public Pack[] Packs = Array.Empty<Pack>();
         public Entry[] Entries = Array.Empty<Entry>();
         public Group[] Groups = Array.Empty<Group>();
@@ -144,6 +147,8 @@ namespace H.ContentsLoader
                     w.Write(g.FolderHash);
                     WriteInts(w, g.Packs);
                 }
+
+                w.Write((byte)RemoteCompression);
             }
             return stream.ToArray();
         }
@@ -204,8 +209,19 @@ namespace H.ContentsLoader
                     Packs = ReadInts(r),
                 };
             }
+
+            if (r.BaseStream.Position < r.BaseStream.Length)
+                catalog.RemoteCompression = (RemoteCompression)r.ReadByte();
             return catalog;
         }
+
+        // 형식마다 서버 파일 이름이 달라서, 형식을 바꿔 올려도 다른 형식을 기대하는 앱이 엉뚱한 파일을 받지 않음
+        public static string RemoteFileName(string fileName, RemoteCompression compression) => compression switch
+        {
+            RemoteCompression.GZip => fileName + ".gz",
+            RemoteCompression.LZ4 => fileName + ".lz4",
+            _ => fileName,
+        };
 
         private static void WriteInts(BinaryWriter w, IReadOnlyCollection<int> values)
         {

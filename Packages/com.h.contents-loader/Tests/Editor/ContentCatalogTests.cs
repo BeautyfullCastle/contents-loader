@@ -90,5 +90,32 @@ namespace H.ContentsLoader.Editor.Tests
         {
             Assert.Throws<System.IO.InvalidDataException>(() => ContentCatalog.FromBytes(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }));
         }
+
+        [Test]
+        public void RoundTripsRemoteCompression()
+        {
+            var catalog = Sample();
+            catalog.RemoteCompression = RemoteCompression.GZip;
+
+            Assert.That(ContentCatalog.FromBytes(catalog.ToBytes()).RemoteCompression, Is.EqualTo(RemoteCompression.GZip));
+        }
+
+        // 압축 형식 필드가 생기기 전에 만든 카탈로그는 LZMA로 읽음
+        [Test]
+        public void CatalogWithoutRemoteCompressionReadsAsLzma()
+        {
+            var bytes = Sample().ToBytes();
+            var old = bytes.Take(bytes.Length - 1).ToArray();
+
+            Assert.That(ContentCatalog.FromBytes(old).RemoteCompression, Is.EqualTo(RemoteCompression.LZMA));
+        }
+
+        [Test]
+        public void RemoteFileNameDependsOnCompression()
+        {
+            Assert.That(ContentCatalog.RemoteFileName("p1_ab.bundle", RemoteCompression.LZMA), Is.EqualTo("p1_ab.bundle"));
+            Assert.That(ContentCatalog.RemoteFileName("p1_ab.bundle", RemoteCompression.GZip), Is.EqualTo("p1_ab.bundle.gz"));
+            Assert.That(ContentCatalog.RemoteFileName("p1_ab.bundle", RemoteCompression.LZ4), Is.EqualTo("p1_ab.bundle.lz4"));
+        }
     }
 }

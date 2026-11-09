@@ -23,6 +23,14 @@ namespace H.ContentsLoader
         {
             this.backend = backend;
             MemoryBudget = backend.MemoryBudget;
+            if (!backend.Ready.IsCompleted) _ = ReadBudgetWhenReady();
+        }
+
+        // 카탈로그를 나중에 받는 백엔드(WebGL)는 받은 뒤에야 예산을 알 수 있음
+        private async Task ReadBudgetWhenReady()
+        {
+            await backend.Ready;
+            MemoryBudget = backend.MemoryBudget;
         }
 
         public IContentBackend Backend => backend;
@@ -72,6 +80,7 @@ namespace H.ContentsLoader
 
         public Task<Object> LoadAsync(string path, Type type, ContentOwner owner)
         {
+            if (!backend.Ready.IsCompleted) return LoadWhenReady(path, type, owner);
             path = ContentPath.Normalize(path);
             if (records.TryGetValue((path, type), out var record))
             {
@@ -89,6 +98,12 @@ namespace H.ContentsLoader
             Claim(record, owner);
             record.Loading = LoadRecordAsync(record);
             return record.Loading;
+        }
+
+        private async Task<Object> LoadWhenReady(string path, Type type, ContentOwner owner)
+        {
+            await backend.Ready;
+            return await LoadAsync(path, type, owner);
         }
 
         private async Task<Object> LoadRecordAsync(ContentRecord record)

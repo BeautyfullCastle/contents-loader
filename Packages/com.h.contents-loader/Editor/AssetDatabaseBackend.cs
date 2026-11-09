@@ -51,6 +51,8 @@ namespace H.ContentsLoader.Editor
             MemoryBudget = memoryBudget;
         }
 
+        public Task Ready => Task.CompletedTask;
+
         public long MemoryBudget { get; }
         public long LoadedBytes => loadedBytes;
 

@@ -22,6 +22,9 @@ namespace H.ContentsLoader
 
     internal interface IContentBackend : IDisposable
     {
+        // 끝나기 전에는 동기 API(GetStatus, Load, GetDownloadSize)를 쓸 수 없음. WebGL은 카탈로그를 받는 동안임
+        Task Ready { get; }
+
         long MemoryBudget { get; }
 
         // 지금 메모리에 올라와 있는 바이트(추정). 여러 애셋이 공유하는 팩이나 오브젝트는 한 번만 셈

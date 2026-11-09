@@ -107,6 +107,25 @@ Built-in과 Download가 같이 쓰는 애셋은 항상 Built-in에 들어갑니�
 - Android에서 `DownloadManager`를 쓰려면 원격 주소가 HTTPS여야 합니다. Unity의 HTTP 허용 설정은 OS 서비스에 적용되지 않기 때문입니다. HTTP 주소는 경고를 남기고 앱 안에서 받습니다.
 - `GetDownloadSize`는 이미 받은 부분을 뺀 남은 크기를 반환합니다.
 
+## WebGL
+
+WebGL에서는 StreamingAssets가 웹 주소라서 파일로 읽을 수 없습니다. 그래서 카탈로그와 팩을 `UnityWebRequest`로 받아 메모리에 두고 `AssetBundle.LoadFromMemory`로 엽니다. 따로 설정할 것은 없습니다.
+
+- 앱이 시작되면 카탈로그를 받기 시작합니다. 받기 전에는 동기 API(`Load`, `Exists`, `IsDownloaded`, `GetDownloadSize`)를 쓸 수 없고 `InvalidOperationException`이 납니다.
+- 비동기 API(`LoadAsync`, `Download`, `UpdateCatalog`)는 카탈로그를 받을 때까지 기다린 뒤 진행합니다.
+- Built-in 팩도 받아야 열 수 있습니다. 시작할 때 `await Content.Download("")`로 필요한 팩을 받아 두면, 그 뒤로는 다른 플랫폼처럼 동기 `Load`를 쓸 수 있습니다.
+
+```csharp
+// WebGL을 포함한 모든 플랫폼에서 같은 시작 흐름
+await Content.Download("", progress);
+var game = Content.Load<GameObject>("Game");
+```
+
+- 받은 팩은 메모리에만 둡니다. 페이지를 새로고침하면 다시 받고, 같은 파일은 브라우저 캐시가 재사용합니다.
+- 팩을 닫았다가 다시 열 때 다시 받지 않도록 받은 바이트를 들고 있습니다. 그만큼 메모리를 더 씁니다.
+- 이어받기와 Android `DownloadManager`는 쓰지 않습니다.
+- Download 팩은 `RemoteCompression`의 LZ4나 GZip을 권장합니다. LZMA 팩은 열 때마다 압축을 모두 풀어야 하고, WebGL에서는 LZ4로 다시 압축해 둘 파일 시스템이 없습니다.
+
 ## 패치
 
 새 빌드의 `Remote/`를 서버에 올리고 앱에서 `await Content.UpdateCatalog()`를 부릅니다. 원격 카탈로그가 더 새로우면 적용됩니다. 팩 파일명이 내용 해시라서 바뀐 팩만 받습니다.
@@ -116,7 +135,7 @@ Built-in과 Download가 같이 쓰는 애셋은 항상 Built-in에 들어갑니�
 ## 현재 제약
 
 - 씬(`.unity`)은 아직 `Contents` 대상이 아닙니다.
-- iOS와 데스크톱은 앱이 실행 중일 때만 받습니다. 중단되면 다음 실행에서 이어 받습니다.
+- iOS와 데스크톱은 앱이 실행 중일 때만 받습니다. 중단되면 다음 실행에서 이어 받습니다. WebGL은 위 WebGL 절을 보세요.
 - 의존성은 파일 단위로 수집합니다. 한 팩에서만 쓰는 의존 파일은 배정하지 않아서 Unity가 참조된 오브젝트만 넣습니다(리포트에 `referenced objects only`로 표시). 여러 팩이 같이 쓰는 파일은 복제를 막으려고 파일 전체를 공유 팩에 넣습니다. 예를 들어 FBX 하나의 메시들을 서로 다른 프리팹이 나눠 쓰면 FBX 전체가 공유 팩에 들어갑니다.
 - AssetBundle은 번들 단위로 언로드됩니다. 같은 팩의 다른 애셋이 쓰이는 동안은 메모리가 해제되지 않습니다.
 - `Assets/` 아래의 `Contents` 폴더만 대상입니다.

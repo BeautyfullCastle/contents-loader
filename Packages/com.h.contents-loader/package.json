@@ -1,6 +1,6 @@
 {
   "name": "com.h.contents-loader",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "Contents Loader",
   "description": "Resources-style asset loading with automatic bundling, deduplication, download, and scene-scoped unloading.",
   "unity": "6000.3",

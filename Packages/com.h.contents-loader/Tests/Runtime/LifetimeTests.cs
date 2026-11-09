@@ -16,7 +16,7 @@ namespace H.ContentsLoader.Tests
         public void SetUp()
         {
             backend = new FakeBackend();
-            backend.Ready.UnionWith(new[] { "A/Only", "B/Only", "Shared", "Global", "Big1", "Big2", "Big3" });
+            backend.ReadyPaths.UnionWith(new[] { "A/Only", "B/Only", "Shared", "Global", "Big1", "Big2", "Big3" });
             backend.Remote.Add("Remote/Boss");
             ContentSystem.Initialize(backend);
             lifetime = ContentSystem.Lifetime;

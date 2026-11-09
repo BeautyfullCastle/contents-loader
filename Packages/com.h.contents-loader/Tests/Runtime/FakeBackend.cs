@@ -35,11 +35,13 @@ namespace H.ContentsLoader.Tests
             }
         }
 
-        public readonly HashSet<string> Ready = new();
+        public readonly HashSet<string> ReadyPaths = new();
         public readonly HashSet<string> Remote = new();
         public readonly List<string> Released = new();
         public TaskCompletionSource<bool> AsyncGate;
         public int Loads;
+
+        public Task Ready => Task.CompletedTask;
 
         public long MemoryBudget { get; set; } = long.MaxValue;
         public long LoadedBytes { get; private set; }
@@ -47,7 +49,7 @@ namespace H.ContentsLoader.Tests
 
         public ContentStatus GetStatus(string path, Type type)
         {
-            if (Ready.Contains(path)) return ContentStatus.Ready;
+            if (ReadyPaths.Contains(path)) return ContentStatus.Ready;
             return Remote.Contains(path) ? ContentStatus.NeedsDownload : ContentStatus.NotFound;
         }
 
@@ -62,7 +64,7 @@ namespace H.ContentsLoader.Tests
         public async Task<IContentLease> LoadAsync(string path, Type type)
         {
             if (AsyncGate != null) await AsyncGate.Task;
-            Ready.Add(path);
+            ReadyPaths.Add(path);
             return Load(path, type);
         }
 

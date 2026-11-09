@@ -14,8 +14,14 @@ namespace H.ContentsLoader
         private ContentCatalog remote;
 
         public CatalogSet(string builtInRoot, string cacheRoot)
+            : this(ReadBuiltIn(Path.Combine(builtInRoot, ContentCatalog.FileName)), cacheRoot)
         {
-            BuiltIn = ReadBuiltIn(Path.Combine(builtInRoot, ContentCatalog.FileName));
+        }
+
+        // 내장 카탈로그를 이미 읽은 경우. WebGL은 웹 주소에서 받아 넘김
+        public CatalogSet(ContentCatalog builtIn, string cacheRoot)
+        {
+            BuiltIn = builtIn;
             remotePath = Path.Combine(cacheRoot, ContentCatalog.FileName);
             remote = ReadCachedRemote();
         }
